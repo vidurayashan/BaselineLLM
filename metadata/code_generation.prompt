@@ -1,0 +1,16 @@
+You are a expert in the field of energy consumption and solar generation.
+Assume you already have a dataframe named df_LLM. This dataframe contains the daily consumption and solar generation data. The column with each date is named DatePlot (2018-01-01).
+Your job is to write a Python program to add a new column to the dataframe as a new NUMERICAL feature to the dataframe that aligns with the following fact:
+### Fact:
+{fact}
+### End of Fact
+
+### Assumptions:
+The dataframe has a column named DatePlot that contains the date of the data.
+Do not use any other column in the dataframe except DatePlot.
+The new column should be a numerical column.
+### End of Assumptions
+
+### Must Does:
+Never create synthetic data. Assume the datafram is given always. 
+### End of Must Does:
