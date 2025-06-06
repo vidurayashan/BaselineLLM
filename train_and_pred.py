@@ -263,6 +263,8 @@ def get_train_test_data(nmi_id, start_date, end_date):
 def train_test_split(df_nmi_X, df_nmi_Y, test_dates = {"test_start_date": 20220101, "test_end_date": 20221231}):
     test_start_date = test_dates["test_start_date"]
     test_end_date   = test_dates["test_end_date"]
+    remove_start_date = test_dates["remove_start"]
+    remove_end_date   = test_dates["remove_end"]
 
     # df_nmi_test_X  = df_nmi_X[(df_nmi_X["DateKey"] > test_start_date)  & (df_nmi_X["DateKey"] <= test_end_date)]
     # df_nmi_train_X = df_nmi_X[(df_nmi_X["DateKey"] <= train_start_date) | (df_nmi_X["DateKey"] > train_end_date)]
@@ -271,8 +273,13 @@ def train_test_split(df_nmi_X, df_nmi_Y, test_dates = {"test_start_date": 202201
     # df_nmi_test_y = df_nmi_Y[(df_nmi_Y["DateKey"] > test_start_date) & (df_nmi_Y["DateKey"] <= test_end_date)]
     # df_nmi_train_y = df_nmi_Y[(df_nmi_Y["DateKey"] <= train_start_date) | (df_nmi_Y["DateKey"] > train_end_date)]
     # df_nmi_train_y = df_nmi_train_y[ df_nmi_train_y["DateKey"] <= train_end_date ]
+    
+    remove_mask = (df_nmi_X["DateKey"] >= remove_start_date) & (df_nmi_X["DateKey"] <= remove_end_date)
+    df_nmi_X = df_nmi_X[~remove_mask]
+    df_nmi_Y = df_nmi_Y[~remove_mask]
 
     test_mask = (df_nmi_X["DateKey"] >  test_start_date) & (df_nmi_X["DateKey"] <= test_end_date)
+    
 
     df_nmi_test_X  = df_nmi_X[test_mask]
     df_nmi_train_X = df_nmi_X[~test_mask]
@@ -465,21 +472,26 @@ def predict_weather(nmi_id, start_date, end_date):
                                                     'Month', 'Quarter', 'Year', 'DatePlot']]
     return df_future_temperature
 
-def forecast_nmi_consumption(model, nmi_id, start_date, end_date, codes=[]):
+# def get_future_X(nmi_id, start_date, end_date):
+#     df_future_temperature = predict_weather(nmi_id, start_date, end_date)
+#     df_future_dates, future_dates = get_future_dates()
+#     return df_future_temperature, future_dates
+    
+def forecast_nmi_consumption(model, nmi_id, start_date, end_date, df_future, codes=[]):
     df_future_temperature = predict_weather(nmi_id, start_date, end_date)
     df_future_dates, future_dates = get_future_dates()
 
-    df_LLM = df_future_temperature.copy()
-    globals()['df_LLM'] = df_LLM
-    if len(codes) > 0:
-        for code in codes:
-            exec(code, globals())
+    # df_LLM = df_future_temperature.copy()
+    # globals()['df_LLM'] = df_LLM
+    # if len(codes) > 0:
+    #     for code in codes:
+    #         exec(code, globals())
     
-    df_LLM_backup = df_LLM.copy()
-    df_LLM.drop(columns=['DatePlot'], inplace=True)
+    df_future_backup = df_future.copy()
+    df_future_backup.drop(columns=['DatePlot', 'DateKey'], inplace=True)
 
-    y_pred = model.predict(df_LLM)
-    return future_dates, y_pred, df_LLM_backup
+    y_pred = model.predict(df_future_backup)
+    return df_future, y_pred
 
 
 def solar_farm_data(nmi_id, start_date, end_date):
@@ -621,12 +633,15 @@ def get_response(msg, temperature=0, top_p = 0, model = "gpt-4o-2024-08-06"):
     )
     return response.choices[0].message.content
 
-def integrate_domain_knowledge(df_nmi_train_X, df_nmi_test_X, domain_facts=[]):
+def integrate_domain_knowledge(nmi_id, start_date, end_date, df_nmi_train_X, df_nmi_test_X, domain_facts=[]):
+
+    df_future_temperature = predict_weather(nmi_id, start_date, end_date)
 
     df_nmi_train_X['set'] = 'train'
     df_nmi_test_X['set'] = 'test'
+    df_future_temperature['set'] = 'future'
 
-    df_LLM = pd.concat([df_nmi_train_X, df_nmi_test_X])
+    df_LLM = pd.concat([df_nmi_train_X, df_nmi_test_X, df_future_temperature])
     globals()['df_LLM'] = df_LLM
 
     codes = []
@@ -651,5 +666,6 @@ def integrate_domain_knowledge(df_nmi_train_X, df_nmi_test_X, domain_facts=[]):
 
     df_nmi_train_X = df_LLM[df_LLM['set'] == 'train'].drop(columns='set')
     df_nmi_test_X = df_LLM[df_LLM['set'] == 'test'].drop(columns='set')
+    df_future_temperature = df_LLM[df_LLM['set'] == 'future'].drop(columns='set')
 
-    return df_nmi_train_X, df_nmi_test_X, df_LLM, codes
+    return df_nmi_train_X, df_nmi_test_X, df_future_temperature, df_LLM, codes
