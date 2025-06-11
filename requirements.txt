@@ -1,2 +1,6 @@
 joblib
 dynaconf
+pyodbc
+xgboost
+pycaret
+openai
