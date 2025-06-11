@@ -59,7 +59,7 @@ def load_data(nmi_id, start_date, end_date, facts=[], test_dates=[]):
         progress_bar.progress(70)
     
     with st.spinner('Training the forecasting model...'):
-        model, rmse_train, mape_train = train_model(df_nmi_train_X, df_nmi_train_y, nmi_id, facts)
+        model, rmse_train, mape_train = train_model(df_nmi_train_X, df_nmi_train_y, nmi_id)
         progress_bar.progress(80)
     
     with st.spinner('Evaluating model performance...'):

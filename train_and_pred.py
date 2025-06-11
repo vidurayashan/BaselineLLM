@@ -11,7 +11,6 @@ from joblib import Memory
 from xgboost import XGBRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error
 from scipy import stats
-from pycaret.regression import *
 from openai import OpenAI
 
 memory = Memory(location='./cachedir', verbose=0)
@@ -326,7 +325,7 @@ def prep_train_test_data(df_nmi_train_X, df_nmi_test_X, df_nmi_train_y, df_nmi_t
 def train_model_autoML(df_nmi_train_X, df_nmi_train_y):
     df_train = df_nmi_train_X.copy()
     df_train['target'] = df_nmi_train_y  # Replace 'target' with your actual target column name if needed
-
+    from pycaret.regression import setup, create_model, tune_model
     # 2. Setup PyCaret
     regression_setup = setup(
         data=df_train,
@@ -342,7 +341,7 @@ def train_model_autoML(df_nmi_train_X, df_nmi_train_y):
     tuned_xgb = tune_model(xgb_model, optimize='MAPE')
     return tuned_xgb
 
-def train_model(df_nmi_train_X, df_nmi_train_y, nmi_id, autoML=True):
+def train_model(df_nmi_train_X, df_nmi_train_y, nmi_id, autoML=False):
     import json
 
     # Define cache file path for this NMI's hyperparameters
@@ -369,6 +368,7 @@ def train_model(df_nmi_train_X, df_nmi_train_y, nmi_id, autoML=True):
             os.makedirs('./cachedir', exist_ok=True)
             with open(cache_file, 'w') as f:
                 json.dump(best_params, f, indent=2)
+            print("Model saved to cache")
         else:
             model = get_model()
             model.fit(df_nmi_train_X, df_nmi_train_y)
