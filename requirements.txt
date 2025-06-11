@@ -3,3 +3,4 @@ dynaconf
 pyodbc
 xgboost
 openai
+scikit-learn
