@@ -11,7 +11,7 @@ from joblib import dump
 from dynaconf import settings
 import pyodbc
 import logging
-from joblib import Memory
+# from joblib import Memory
 from train_and_pred import *
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
