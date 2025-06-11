@@ -260,7 +260,17 @@ def get_train_test_data(nmi_id, start_date, end_date):
 
     return df_nmi_X, df_nmi_Y
 
-def train_test_split(df_nmi_X, df_nmi_Y, test_dates = {"test_start_date": 20220101, "test_end_date": 20221231}):
+def train_test_split(df_nmi_X, df_nmi_Y, test_dates):
+
+    if "test_start_date" not in test_dates:
+        test_dates["test_start_date"] = 20220101
+    if "test_end_date" not in test_dates:
+        test_dates["test_end_date"] = 20221231
+    if "remove_start" not in test_dates:
+        test_dates["remove_start"] = 20170101
+    if "remove_end" not in test_dates:
+        test_dates["remove_end"] = 20171231
+        
     test_start_date = test_dates["test_start_date"]
     test_end_date   = test_dates["test_end_date"]
     remove_start_date = test_dates["remove_start"]
@@ -273,7 +283,7 @@ def train_test_split(df_nmi_X, df_nmi_Y, test_dates = {"test_start_date": 202201
     # df_nmi_test_y = df_nmi_Y[(df_nmi_Y["DateKey"] > test_start_date) & (df_nmi_Y["DateKey"] <= test_end_date)]
     # df_nmi_train_y = df_nmi_Y[(df_nmi_Y["DateKey"] <= train_start_date) | (df_nmi_Y["DateKey"] > train_end_date)]
     # df_nmi_train_y = df_nmi_train_y[ df_nmi_train_y["DateKey"] <= train_end_date ]
-    
+
     remove_mask = (df_nmi_X["DateKey"] >= remove_start_date) & (df_nmi_X["DateKey"] <= remove_end_date)
     df_nmi_X = df_nmi_X[~remove_mask]
     df_nmi_Y = df_nmi_Y[~remove_mask]
