@@ -12,18 +12,23 @@ from xgboost import XGBRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error
 from scipy import stats
 from openai import OpenAI
+import streamlit as st
 
 memory = Memory(location='./cachedir', verbose=0)
 
 def get_db_connection():
-    server = settings.get('DB_SERVER', '')
-    database = settings.get('DB_NAME', '')
-    username = settings.get('DB_USERNAME', '')
-    password = settings.get('DB_PASSWORD', '')
+    try:
+        server = st.secrets.get('DB_SERVER', '')
+        database = st.secrets.get('DB_NAME', '')
+        username = st.secrets.get('DB_USERNAME', '')
+        password = st.secrets.get('DB_PASSWORD', '')
 
-    connection_string = 'DRIVER={ODBC Driver 17 for SQL Server};SERVER=' + server + ';DATABASE=' + database \
-        + ';UID=' + username + ';PWD=' + password
-    return pyodbc.connect(connection_string)
+        connection_string = 'DRIVER={ODBC Driver 17 for SQL Server};SERVER=' + server + ';DATABASE=' + database \
+            + ';UID=' + username + ';PWD=' + password
+        return pyodbc.connect(connection_string)
+    except Exception as e:
+        st.error(f"Failed to connect to database. Please check your database credentials in .streamlit/secrets.toml")
+        raise e
 
 METER_DAILY_CONSUMPTION_SQL = \
 """WITH DistinctReadingDates AS (
@@ -662,16 +667,21 @@ def integrate_domain_knowledge(nmi_id, start_date, end_date, df_nmi_train_X, df_
             prompt_template = f.read()
         
         for fact in domain_facts:
-            prompt = prompt_template.format(fact=fact)
+            try:
+                prompt = prompt_template.format(fact=fact)
 
-            raw_resp = get_response(prompt)
-            code = get_response("Show me the Python syntax of the following. Remove starting ```python and ending ```:\n\n" + raw_resp)
-            print(f"Fact: {fact}")
-            print(f"Code: {code}")
-            exec(code, globals())
-            codes.append(code)
-            print(f"df_LLM.columns: {df_LLM.columns}")
-            print("===============================================")
+                raw_resp = get_response(prompt)
+                code = get_response("Show me the Python syntax of the following. Remove starting ```python and ending ```:\n\n" + raw_resp)
+                print(f"Fact: {fact}")
+                print(f"Code: {code}")
+                exec(code, globals())
+                codes.append(code)
+                print(f"df_LLM.columns: {df_LLM.columns}")
+                print("===============================================")
+            except Exception as e:
+                print(f"Error processing fact: {fact}")
+                print(f"Error message: {str(e)}")
+                continue
     
 
     df_nmi_train_X = df_LLM[df_LLM['set'] == 'train'].drop(columns='set')
