@@ -7,7 +7,6 @@ from dynaconf import settings
 import pyodbc
 import logging
 from functools import lru_cache
-from joblib import Memory
 from xgboost import XGBRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error
 from scipy import stats
@@ -15,8 +14,6 @@ from openai import OpenAI
 
 # Create data directory if it doesn't exist
 os.makedirs('data', exist_ok=True)
-
-memory = Memory(location='./cachedir', verbose=0)
 
 def get_cached_data(filename, query_func, *args, **kwargs):
     """
@@ -118,7 +115,6 @@ METER_DETAILS = \
     ORDER BY NetworkID
 """
 
-@memory.cache
 def get_meter_info():
     def _query_meter_info():
         connection = get_db_connection()
@@ -128,7 +124,6 @@ def get_meter_info():
     
     return get_cached_data('meter_info.csv', _query_meter_info)
 
-@memory.cache
 def get_meter_daily_consumption(nmi_id, start_date):
     def _query_meter_daily_consumption():
         connection = get_db_connection()
@@ -147,7 +142,6 @@ def get_meter_daily_consumption(nmi_id, start_date):
     cache_filename = f'meter_daily_consumption_{nmi_id}_{start_date}.csv'
     return get_cached_data(cache_filename, _query_meter_daily_consumption)
 
-@memory.cache
 def get_meter_solar_generation(nmi_id):
     def _query_meter_solar_generation():
         connection = get_db_connection()
@@ -158,7 +152,6 @@ def get_meter_solar_generation(nmi_id):
     cache_filename = f'meter_solar_generation_{nmi_id}.csv'
     return get_cached_data(cache_filename, _query_meter_solar_generation)
 
-@memory.cache
 def get_time_data(start_date='20180101', end_date='20250101'):
     def _query_date_data():
         connection = get_db_connection()
@@ -179,7 +172,6 @@ def get_time_data(start_date='20180101', end_date='20250101'):
     time = get_cached_data(cache_filename_2, _query_time_data)
     return date, time
 
-@memory.cache
 def get_temperature_data(nmi_id, start_date='20180101', end_date='20250101'):
     def _query_temperature_data():
         connection = get_db_connection()

@@ -1,4 +1,3 @@
-joblib
 dynaconf
 pyodbc
 xgboost
