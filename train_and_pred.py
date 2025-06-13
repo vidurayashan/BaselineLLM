@@ -12,22 +12,46 @@ from xgboost import XGBRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error
 from scipy import stats
 from openai import OpenAI
-import streamlit as st
+
+# Create data directory if it doesn't exist
+os.makedirs('data', exist_ok=True)
 
 memory = Memory(location='./cachedir', verbose=0)
 
+def get_cached_data(filename, query_func, *args, **kwargs):
+    """
+    Get data from cache file if it exists, otherwise query database and save to cache.
+    
+    Args:
+        filename (str): Name of the cache file
+        query_func (function): Function to query database if cache doesn't exist
+        *args: Arguments to pass to query_func
+        **kwargs: Keyword arguments to pass to query_func
+        
+    Returns:
+        pandas.DataFrame: The requested data
+    """
+    cache_path = os.path.join('data', filename)
+    
+    if os.path.exists(cache_path):
+        return pd.read_csv(cache_path)
+    else:
+        df = query_func(*args, **kwargs)
+        df.to_csv(cache_path, index=False)
+        return df
+
 def get_db_connection():
     try:
-        server = st.secrets.get('DB_SERVER', '')
-        database = st.secrets.get('DB_NAME', '')
-        username = st.secrets.get('DB_USERNAME', '')
-        password = st.secrets.get('DB_PASSWORD', '')
+        server = settings.get('DB_SERVER', '')
+        database = settings.get('DB_NAME', '')
+        username = settings.get('DB_USERNAME', '')
+        password = settings.get('DB_PASSWORD', '')
 
         connection_string = 'DRIVER={ODBC Driver 17 for SQL Server};SERVER=' + server + ';DATABASE=' + database \
             + ';UID=' + username + ';PWD=' + password
         return pyodbc.connect(connection_string)
     except Exception as e:
-        st.error(f"Failed to connect to database. Please check your database credentials in .streamlit/secrets.toml")
+        logging.error(f"Failed to connect to database!")
         raise e
 
 METER_DAILY_CONSUMPTION_SQL = \
@@ -96,88 +120,72 @@ METER_DETAILS = \
 
 @memory.cache
 def get_meter_info():
-    connection = get_db_connection()
-    df_meter_info = pd.read_sql(METER_DETAILS, connection)
-    connection.close()
-    return df_meter_info
+    def _query_meter_info():
+        connection = get_db_connection()
+        df_meter_info = pd.read_sql(METER_DETAILS, connection)
+        connection.close()
+        return df_meter_info
+    
+    return get_cached_data('meter_info.csv', _query_meter_info)
 
 @memory.cache
 def get_meter_daily_consumption(nmi_id, start_date):
-    connection = get_db_connection()
-    if nmi_id == 1:
-        df_nmi = pd.read_sql(METER_DAILY_CONSUMPTION_SQL_NEW_MAIN % (str(nmi_id), str(start_date)), connection)
-    else:
-        df_nmi = pd.read_sql(METER_DAILY_CONSUMPTION_SQL % (str(nmi_id), str(start_date)), connection)
-    connection.close()
-    df_nmi['DateKey']          = pd.to_datetime(df_nmi['date']).dt.strftime('%Y%m%d').astype(int)
-    df_nmi.drop(columns=["date"], inplace=True)
-    df_nmi = df_nmi[df_nmi['DateKey'] >= 20180101].reset_index(drop=True)
-    df_nmi = df_nmi[['DateKey','metered_consumption', 'peak_demand']]
-    df_nmi_cleaned = remove_outliers_combined(df_nmi, consumption_col='metered_consumption')
-    return df_nmi_cleaned
+    def _query_meter_daily_consumption():
+        connection = get_db_connection()
+        if nmi_id == 1:
+            df_nmi = pd.read_sql(METER_DAILY_CONSUMPTION_SQL_NEW_MAIN % (str(nmi_id), str(start_date)), connection)
+        else:
+            df_nmi = pd.read_sql(METER_DAILY_CONSUMPTION_SQL % (str(nmi_id), str(start_date)), connection)
+        connection.close()
+        df_nmi['DateKey'] = pd.to_datetime(df_nmi['date']).dt.strftime('%Y%m%d').astype(int)
+        df_nmi.drop(columns=["date"], inplace=True)
+        df_nmi = df_nmi[df_nmi['DateKey'] >= 20180101].reset_index(drop=True)
+        df_nmi = df_nmi[['DateKey','metered_consumption', 'peak_demand']]
+        df_nmi_cleaned = remove_outliers_combined(df_nmi, consumption_col='metered_consumption')
+        return df_nmi_cleaned
+    
+    cache_filename = f'meter_daily_consumption_{nmi_id}_{start_date}.csv'
+    return get_cached_data(cache_filename, _query_meter_daily_consumption)
 
 @memory.cache
 def get_meter_solar_generation(nmi_id):
-    connection = get_db_connection()
-    df_solar = pd.read_sql(METER_SOLAR_GENERATION % (str(nmi_id)), connection)
-    connection.close()
-    return df_solar
-
-def preprocess_solar_data(df_solar):
-    df_solar['date_time'] = pd.to_datetime(df_solar['ReadingDateTime'])
-    df_solar_agg = df_solar.groupby(df_solar['date_time'].dt.date).agg({
-        'SolarPowerReading': 'sum'
-    }).reset_index().sort_values(by=['date_time'])
-
-    # Rename the index column to be more descriptive
-    df_solar_agg = df_solar_agg.rename(columns={'date_time': 'DateKey'})
-    df_solar_agg['DateKey'] = pd.to_datetime(df_solar_agg['DateKey']).dt.strftime('%Y%m%d').astype(int)
-    return df_solar_agg
-
-def merge_meter_n_solar_data(df_nmi, df_solar):
-    # Create daily aggregation with all fields
+    def _query_meter_solar_generation():
+        connection = get_db_connection()
+        df_solar = pd.read_sql(METER_SOLAR_GENERATION % (str(nmi_id)), connection)
+        connection.close()
+        return df_solar
     
-    df_solar_agg = preprocess_solar_data(df_solar)
-
-    df_merged = df_nmi.merge(
-        df_solar_agg,
-        on='DateKey',
-        how='left'
-    )
-
-    df_merged['SolarPowerReading'] = df_merged['SolarPowerReading'].fillna(0)
-    df_merged['consumption'] = df_merged['metered_consumption'] #+ df_merged['SolarPowerReading']
-    df_merged['DatePlot'] = pd.to_datetime(df_merged["DateKey"], format="%Y%m%d")
-
-    return df_merged
+    cache_filename = f'meter_solar_generation_{nmi_id}.csv'
+    return get_cached_data(cache_filename, _query_meter_solar_generation)
 
 @memory.cache
 def get_time_data(start_date='20180101', end_date='20250101'):
-    connection = get_db_connection()
-    date = pd.read_sql("SELECT * FROM dbo.DimDate WHERE DateKey >= %s AND DateKey <= %s" % (start_date, end_date),
-                       connection)
-    time = pd.read_sql("SELECT * FROM dbo.DimTime", connection)
-    connection.close()
+    def _query_date_data():
+        connection = get_db_connection()
+        date = pd.read_sql("SELECT * FROM dbo.DimDate WHERE DateKey >= %s AND DateKey <= %s" % (start_date, end_date),
+                          connection)
+        connection.close()
+        return date
+    
+    def _query_time_data():
+        connection = get_db_connection()
+        time = pd.read_sql("SELECT * FROM dbo.DimTime", connection)
+        connection.close()
+        return time
+    
+    cache_filename_1 = f'date_data_{start_date}_{end_date}.csv'
+    cache_filename_2 = f'time_data_{start_date}_{end_date}.csv'
+    date = get_cached_data(cache_filename_1, _query_date_data)
+    time = get_cached_data(cache_filename_2, _query_time_data)
     return date, time
 
 @memory.cache
 def get_temperature_data(nmi_id, start_date='20180101', end_date='20250101'):
-    connection = get_db_connection()
-    formatted_start_date = datetime.strptime(str(start_date), "%Y%m%d").strftime("%Y-%m-%d")
-    formatted_end_date   = datetime.strptime(str(end_date), "%Y%m%d").strftime("%Y-%m-%d")
-
-    df_meter_info = get_meter_info()    
-    campus_key = df_meter_info[df_meter_info['NetworkID'] == nmi_id]['CampusKey'].values[0]
-
-    # Create a unique filename based on parameters
-    cache_filename = f"cachedir/temperature_data_campus{campus_key}_{start_date}_{end_date}.csv"
-
-    # Check if cached file exists with the same parameters
-    if os.path.exists(cache_filename):
-        # Read from cache file if it exists
-        reading_temperature = pd.read_csv(cache_filename)
-    else:
-        # If not cached, query the database
+    def _query_temperature_data():
+        connection = get_db_connection()
+        df_meter_info = get_meter_info()    
+        campus_key = df_meter_info[df_meter_info['NetworkID'] == nmi_id]['CampusKey'].values[0]
+        
         reading_temperature = pd.read_sql("""SELECT[DateKey]
                     ,[TimeKey]
                     ,[ApparentTemperature]
@@ -186,21 +194,23 @@ def get_temperature_data(nmi_id, start_date='20180101', end_date='20250101'):
                     ,[RelativeHumidity]
                 FROM [Leap].[dbo].[vwClimate] WHERE CampusKey= %s AND DateKey >= %s AND DateKey <= %s"""
                                             % (campus_key, start_date, end_date), connection)
-        # Save to cache file for future use
-        reading_temperature.to_csv(cache_filename, index=False)
+        connection.close()
+        return reading_temperature
     
-    connection.close()
-
+    df_meter_info = get_meter_info()    
+    campus_key = df_meter_info[df_meter_info['NetworkID'] == nmi_id]['CampusKey'].values[0]
+    cache_filename = f'temperature_data_{campus_key}_{start_date}_{end_date}.csv'
+    reading_temperature = get_cached_data(cache_filename, _query_temperature_data)
+    
     date, time = get_time_data(start_date, end_date)
     reading_temperature['Timestamp'] = pd.to_datetime(
-        reading_temperature.DateKey.astype(
-            str) + " " + reading_temperature['TimeKey'].astype(str).str.zfill(6),
+        reading_temperature.DateKey.astype(str) + " " + reading_temperature['TimeKey'].astype(str).str.zfill(6),
         format="ISO8601")
 
     temp_range = pd.date_range(reading_temperature['Timestamp'].dt.date.min(axis=0),
-                                reading_temperature['Timestamp'].max(axis=0),
-                                freq='15min',
-                                name="Timestamp").to_frame().reset_index(drop=True)
+                              reading_temperature['Timestamp'].max(axis=0),
+                              freq='15min',
+                              name="Timestamp").to_frame().reset_index(drop=True)
     temp_out = pd.merge(temp_range, reading_temperature, how="left", left_on="Timestamp", right_on="Timestamp").fillna(
         method='ffill')
     temp_out.TimeKey = temp_out.Timestamp.dt.strftime("%H%M%S").astype(int)
@@ -209,25 +219,20 @@ def get_temperature_data(nmi_id, start_date='20180101', end_date='20250101'):
 
     date_data = date.drop_duplicates(subset='DateKey', keep='first')
     date_data = date_data.drop(columns=['Date', 'DaySuffix', 'WeekDayName', 'HolidayText', 'DayOfYear',
-                                        'ISOWeekOfYear', 'MonthName', 'QuarterName', 'MMYYYY', 'MonthYear',
-                                        'FirstDayOfMonth', 'LastDayOfMonth', 'FirstDayOfQuarter', 'LastDayOfQuarter',
-                                        'FirstDayOfYear', 'LastDayOfYear', 'FirstDayOfNextMonth', 'FirstDayOfNextYear',
-                                        'IsSemester', 'IsExamPeriod', 'CalendarSignificance',
-                                        'HasCalendarSignificance'])
+                                      'ISOWeekOfYear', 'MonthName', 'QuarterName', 'MMYYYY', 'MonthYear',
+                                      'FirstDayOfMonth', 'LastDayOfMonth', 'FirstDayOfQuarter', 'LastDayOfQuarter',
+                                      'FirstDayOfYear', 'LastDayOfYear', 'FirstDayOfNextMonth', 'FirstDayOfNextYear',
+                                      'IsSemester', 'IsExamPeriod', 'CalendarSignificance',
+                                      'HasCalendarSignificance'])
     date_data["IsWeekend"] = date_data["IsWeekend"].astype(int)
     date_data["IsHoliday"] = date_data["IsHoliday"].astype(int)
 
-    # preprocess the time data
     time_data = time.drop_duplicates(subset='TimeKey', keep='first')
     time_data = time_data.drop(
         columns=['Hour24ShortString', 'Hour24FullString', 'Hour24MinString', 'Hour12', 'Hour12ShortString',
-                    'Hour12MinString',
-                    'Hour12FullString', 'AmPmString', 'MinuteCode', 'MinuteShortString', 'MinuteFullString24',
-                    'MinuteFullString12', 'HalfHourShortString', 'HalfHourCode',
-                    'HalfHourFullString12', 'SecondShortString', 'Second', 'FullTimeString12',
-                    'FullTime'])
-
-
+                'Hour12MinString', 'Hour12FullString', 'AmPmString', 'MinuteCode', 'MinuteShortString', 
+                'MinuteFullString24', 'MinuteFullString12', 'HalfHourShortString', 'HalfHourCode',
+                'HalfHourFullString12', 'SecondShortString', 'Second', 'FullTimeString12', 'FullTime'])
 
     reading_temperature.reset_index(drop=True, inplace=True)
     reading_temperature["DateKey"] = pd.to_datetime(reading_temperature["DateKey"], format="%Y%m%d")
@@ -689,3 +694,31 @@ def integrate_domain_knowledge(nmi_id, start_date, end_date, df_nmi_train_X, df_
     df_future_temperature = df_LLM[df_LLM['set'] == 'future'].drop(columns='set')
 
     return df_nmi_train_X, df_nmi_test_X, df_future_temperature, df_LLM, codes
+
+def preprocess_solar_data(df_solar):
+    df_solar['date_time'] = pd.to_datetime(df_solar['ReadingDateTime'])
+    df_solar_agg = df_solar.groupby(df_solar['date_time'].dt.date).agg({
+        'SolarPowerReading': 'sum'
+    }).reset_index().sort_values(by=['date_time'])
+
+    # Rename the index column to be more descriptive
+    df_solar_agg = df_solar_agg.rename(columns={'date_time': 'DateKey'})
+    df_solar_agg['DateKey'] = pd.to_datetime(df_solar_agg['DateKey']).dt.strftime('%Y%m%d').astype(int)
+    return df_solar_agg
+
+def merge_meter_n_solar_data(df_nmi, df_solar):
+    # Create daily aggregation with all fields
+    
+    df_solar_agg = preprocess_solar_data(df_solar)
+
+    df_merged = df_nmi.merge(
+        df_solar_agg,
+        on='DateKey',
+        how='left'
+    )
+
+    df_merged['SolarPowerReading'] = df_merged['SolarPowerReading'].fillna(0)
+    df_merged['consumption'] = df_merged['metered_consumption'] #+ df_merged['SolarPowerReading']
+    df_merged['DatePlot'] = pd.to_datetime(df_merged["DateKey"], format="%Y%m%d")
+
+    return df_merged

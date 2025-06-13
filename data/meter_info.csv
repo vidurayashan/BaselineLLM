@@ -1,0 +1,16 @@
+NetworkID,Name,Description,Provider,Reference,Location,Grouping,Demand,DemandCharge,DemandUnit,DemandChargeUnit,IsActive,CampusKey
+1,Bundoora - Main Network,LTU01_01,,VDDD000313,Bundoora Main Electricity Network,Melbourne (Bundoora) Campus,7659.0,210000.0,kVA,,True,1
+2,Bundoora - College Drive Network,LTU01_028 College Drive (2nd Feeder),,6001422780,Bundoora Secondary Electricity Feeder,Melbourne (Bundoora) Campus,1225.89,94.366,kVA,$/kVA/pa,True,1
+106,Mildura - 471 Benetook Ave,6203666845,,6203666845,Mildura Campus (471 Benetook Ave),Mildura Campus,121.0,12.99,kVA,,True,4
+107,Shepparton - Fryers Street,LTU01_20,,6203796087,Shepparton Campus (210 Fryers St),Shepparton Campus,145.0,12.99,kVA,$/kVA/mth,True,5
+126,Bendigo LSU - Applied Science 2,Applied Science 2 Building-VCCCCB0009,,VCCCCB0009,Bendigo LSU Electricity Network,Bendigo Campus,626.0,12.99,kVA,,True,3
+132,Bendigo LSU - Library Union,Library Union Building-VCCCCB0010,,VCCCCB0010,Bendigo LSU Electricity Network,Bendigo Campus,974.0,,,,True,3
+139,MCFC,LTU01_02,,VDDD001386,MCFC,Melbourne (Bundoora) Campus,192.751,124.742,kVA,,True,1
+140,Bendigo - Hillside Apartments,LTU01_022,,6203819159,Bendigo Hillside Apartments,Bendigo Campus,143.0,12.99,kVA,$/kVA/mth,True,3
+141,Wodonga - McFarlanes Hill Residences,LTU01_026,,6305899689,McFarlanes Hill Student Accomodation,Albury-Wodonga Campus,100.0,19.1,kVA,$/kVA/pa,True,2
+145,La Trobe - University Lodge,LTU01_03,,VBBB000937,University Lodge (EMA-EME),Melbourne (Bundoora) Campus,90.0,19.1,kVA,,True,1
+146,Institute for Advanced Study (NR1-NR8),LTU01_04,,VBBB002596,Institute for Advanced Study (NR1-NR8),Melbourne (Bundoora) Campus,22.68,77.83,kVA,,True,1
+147,Mont Park (TER7-TER14),LTU01_07,,6305118660,Mont Park (TER7-TER14),Melbourne (Bundoora) Campus,260.0,46.41,kVA,,True,1
+148,R&D TEC Building 2 (2PD),LTU01_08,,VDDD000965,R&D TEC Building 2 (2PD),Melbourne (Bundoora) Campus,120.0,124.742,kVA,,True,1
+154,La Trobe - Parkers Road PO4200015252 Wodonga,LTU01_16,,VBBB001990,Albury-Wodonga Campus (Parkers Rd),Albury-Wodonga Campus,930.0,46.41,kVA,,True,2
+166,CARM Centre,VDDD000967,,VDDD000967,CARM Centre,Melbourne (Bundoora) Campus,206.687,124.742,kVA,,True,1
