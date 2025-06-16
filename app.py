@@ -72,11 +72,11 @@ def load_data(nmi_id, start_date, end_date, facts=[], test_dates=[]):
     
     return model, mape_test, df_nmi_X, df_nmi_Y, df_future_dates, y_pred, df_LLM, df_future
 
-def get_all_meter_details():
-    df_meter_info = get_meter_info()
-    meter_dict = {row['NetworkID'] : row['Name'] for _, row in df_meter_info.iterrows()}
-    campus_dict = {row['NetworkID'] : row['CampusKey'] for _, row in df_meter_info.iterrows()}
-    return meter_dict, campus_dict
+# def get_all_meter_details():
+#     df_meter_info = get_meter_info()
+#     meter_dict = {row['NetworkID'] : row['Name'] for _, row in df_meter_info.iterrows()}
+#     campus_dict = {row['NetworkID'] : row['CampusKey'] for _, row in df_meter_info.iterrows()}
+#     return meter_dict, campus_dict
 
 # Load configuration data
 @st.cache_data

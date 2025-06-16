@@ -12,6 +12,7 @@ from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error
 from scipy import stats
 from openai import OpenAI
 import streamlit as st
+import pickle
 
 # Create data directory if it doesn't exist
 os.makedirs('data', exist_ok=True)
@@ -405,38 +406,68 @@ def evaluate_model(df_nmi_test_y, df_nmi_test_y_pred):
     mape = mean_absolute_percentage_error(df_nmi_test_y, df_nmi_test_y_pred)
     return rmse, mape
 
+def get_all_meter_details():
+    df_meter_info = get_meter_info()
+    meter_dict = {row['NetworkID']: row['Name'] for _, row in df_meter_info.iterrows()}
+    campus_dict = {row['NetworkID']: row['CampusKey'] for _, row in df_meter_info.iterrows()}
+    return meter_dict, campus_dict
 
 def get_temperature_models(nmi_id, start_date, end_date):
-    temperature_models = {}
-    best_params = {
-        'colsample_bytree': 0.6,
-        'gamma': 1,
-        'learning_rate': 0.05,
-        'max_depth': 3,
-        'n_estimators': 1000,
-        'reg_alpha': 1,
-        'reg_lambda': 10,
-        'subsample': 0.7
-    }
+    with st.spinner('Getting temperature models...'):
+        # Get campus ID for the NMI
+        _, campus_dict = get_all_meter_details()
+        campus_id = campus_dict[nmi_id]
+        
+        # Define cache paths using campus_id instead of nmi_id
+        temp_data_cache = f'data/temperature_daily_data_campus_{campus_id}_{start_date}_{end_date}.csv'
+        models_cache_dir = f'data/temperature_models_campus_{campus_id}_{start_date}_{end_date}'
+        os.makedirs(models_cache_dir, exist_ok=True)
 
-    temperature_models['AirTemperature']      = XGBRegressor(**best_params)
-    temperature_models['ApparentTemperature'] = XGBRegressor(**best_params)
-    temperature_models['DewPointTemperature'] = XGBRegressor(**best_params)
-    temperature_models['RelativeHumidity']    = XGBRegressor(**best_params)
+        # Check if temperature data is cached
+        if os.path.exists(temp_data_cache):
+            with st.spinner('Loading cached temperature data...'):
+                df_temperature_daily_data = pd.read_csv(temp_data_cache)
+        else:
+            with st.spinner('Processing temperature data...'):
+                df_temperature_daily_data = get_temperature_daily_data(nmi_id, start_date, end_date)
+                df_temperature_daily_data.to_csv(temp_data_cache, index=False)
 
-    df_temperature_daily_data = get_temperature_daily_data(nmi_id, start_date, end_date)
+        df_temperature_daily_data_X = df_temperature_daily_data.drop(columns=['DateKey', 
+                                                                          'ApparentTemperature', 'AirTemperature', 
+                                                                          'DewPointTemperature', 'RelativeHumidity'])
 
-    df_temperature_daily_data_X = df_temperature_daily_data.drop(columns=['DateKey', 
-                                                                      'ApparentTemperature', 'AirTemperature', 
-                                                                      'DewPointTemperature', 'RelativeHumidity'])
+        temperature_models = {}
+        temperature_types = ['AirTemperature', 'ApparentTemperature', 'DewPointTemperature', 'RelativeHumidity']
 
+        for temp_type in temperature_types:
+            model_cache_path = os.path.join(models_cache_dir, f'{temp_type}_model.pkl')
+            
+            if os.path.exists(model_cache_path):
+                with st.spinner(f'Loading cached {temp_type} model...'):
+                    with open(model_cache_path, 'rb') as f:
+                        temperature_models[temp_type] = pickle.load(f)
+            else:
+                with st.spinner(f'Training {temp_type} model...'):
+                    best_params = {
+                        'colsample_bytree': 0.6,
+                        'gamma': 1,
+                        'learning_rate': 0.05,
+                        'max_depth': 3,
+                        'n_estimators': 1000,
+                        'reg_alpha': 1,
+                        'reg_lambda': 10,
+                        'subsample': 0.7
+                    }
+                    
+                    model = XGBRegressor(**best_params)
+                    model.fit(df_temperature_daily_data_X, df_temperature_daily_data[temp_type])
+                    temperature_models[temp_type] = model
+                    
+                    # Save the trained model using pickle
+                    with open(model_cache_path, 'wb') as f:
+                        pickle.dump(model, f)
 
-    temperature_models['AirTemperature'].fit(df_temperature_daily_data_X, df_temperature_daily_data['AirTemperature'])
-    temperature_models['ApparentTemperature'].fit(df_temperature_daily_data_X, df_temperature_daily_data['ApparentTemperature'])
-    temperature_models['DewPointTemperature'].fit(df_temperature_daily_data_X, df_temperature_daily_data['DewPointTemperature'])
-    temperature_models['RelativeHumidity'].fit(df_temperature_daily_data_X, df_temperature_daily_data['RelativeHumidity'])
-
-    return temperature_models
+        return temperature_models
 
 def get_future_dates():
     # Create date range
