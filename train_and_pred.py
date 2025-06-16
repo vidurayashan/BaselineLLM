@@ -10,7 +10,6 @@ from functools import lru_cache
 from xgboost import XGBRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error
 from scipy import stats
-from openai import OpenAI
 import streamlit as st
 import pickle
 
@@ -679,12 +678,7 @@ def remove_outliers_combined(df, consumption_col='consumption', z_score_threshol
     
     return df_final
 
-client = OpenAI(
-    # This is the default and can be omitted
-    api_key=settings.get('OPENAI_API_KEY', '')
-)
-
-def get_response(msg, temperature=0, top_p = 0, model = "gpt-4o-2024-08-06"):
+def get_response(client, msg, temperature=0, top_p = 0, model = "gpt-4o-2024-08-06"):
     messages = [{"role": "user", "content": msg}]
     response = client.chat.completions.create(
         model=model,
@@ -694,7 +688,7 @@ def get_response(msg, temperature=0, top_p = 0, model = "gpt-4o-2024-08-06"):
     )
     return response.choices[0].message.content
 
-def integrate_domain_knowledge(nmi_id, start_date, end_date, df_nmi_train_X, df_nmi_test_X, domain_facts=[]):
+def integrate_domain_knowledge(client, nmi_id, start_date, end_date, df_nmi_train_X, df_nmi_test_X, domain_facts=[]):
     with st.spinner('Integrating domain knowledge...'):
         df_future_temperature = predict_weather(nmi_id, start_date, end_date)
 
@@ -717,8 +711,8 @@ def integrate_domain_knowledge(nmi_id, start_date, end_date, df_nmi_train_X, df_
                     with st.spinner(f'Processing domain fact: {fact[:50]}...'):
                         prompt = prompt_template.format(fact=fact)
 
-                        raw_resp = get_response(prompt)
-                        code = get_response("Show me the Python syntax of the following. Remove starting ```python and ending ```:\n\n" + raw_resp)
+                        raw_resp = get_response(client, prompt)
+                        code = get_response(client, "Show me the Python syntax of the following. Remove starting ```python and ending ```:\n\n" + raw_resp)
                         st.info(f"Fact: {fact}")
                         st.code(code)
                         exec(code, globals())

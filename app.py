@@ -16,6 +16,7 @@ from train_and_pred import *
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import json
+from openai import OpenAI
 
 # Set page config
 st.set_page_config(
@@ -51,7 +52,8 @@ def load_data(nmi_id, start_date, end_date, facts=[], test_dates=[]):
         progress_bar.progress(40)
     
     with st.spinner('Integrating domain knowledge and processing features...'):
-        df_nmi_train_X, df_nmi_test_X, df_future, df_LLM, codes = integrate_domain_knowledge(nmi_id, start_date, end_date, df_nmi_train_X, df_nmi_test_X, facts)
+        client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+        df_nmi_train_X, df_nmi_test_X, df_future, df_LLM, codes = integrate_domain_knowledge(client, nmi_id, start_date, end_date, df_nmi_train_X, df_nmi_test_X, facts)
         progress_bar.progress(60)
     
     with st.spinner('Preparing final training and testing datasets...'):
