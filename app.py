@@ -52,7 +52,7 @@ def load_data(nmi_id, start_date, end_date, facts=[], test_dates=[]):
         progress_bar.progress(40)
     
     with st.spinner('Integrating domain knowledge and processing features...'):
-        client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+        client = OpenAI(api_key=st.secrets['default']["OPENAI_API_KEY"])
         df_nmi_train_X, df_nmi_test_X, df_future, df_LLM, codes = integrate_domain_knowledge(client, nmi_id, start_date, end_date, df_nmi_train_X, df_nmi_test_X, facts)
         progress_bar.progress(60)
     
