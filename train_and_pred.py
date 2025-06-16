@@ -11,6 +11,7 @@ from xgboost import XGBRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error
 from scipy import stats
 from openai import OpenAI
+import streamlit as st
 
 # Create data directory if it doesn't exist
 os.makedirs('data', exist_ok=True)
@@ -31,11 +32,13 @@ def get_cached_data(filename, query_func, *args, **kwargs):
     cache_path = os.path.join('data', filename)
     
     if os.path.exists(cache_path):
-        return pd.read_csv(cache_path)
+        with st.spinner(f'Loading cached data from {filename}...'):
+            return pd.read_csv(cache_path)
     else:
-        df = query_func(*args, **kwargs)
-        df.to_csv(cache_path, index=False)
-        return df
+        with st.spinner(f'Querying database and saving to cache {filename}...'):
+            df = query_func(*args, **kwargs)
+            df.to_csv(cache_path, index=False)
+            return df
 
 def get_db_connection():
     try:
@@ -48,7 +51,7 @@ def get_db_connection():
             + ';UID=' + username + ';PWD=' + password
         return pyodbc.connect(connection_string)
     except Exception as e:
-        logging.error(f"Failed to connect to database!")
+        st.error(f"Failed to connect to database!")
         raise e
 
 METER_DAILY_CONSUMPTION_SQL = \
@@ -116,129 +119,135 @@ METER_DETAILS = \
 """
 
 def get_meter_info():
-    def _query_meter_info():
-        connection = get_db_connection()
-        df_meter_info = pd.read_sql(METER_DETAILS, connection)
-        connection.close()
-        return df_meter_info
-    
-    return get_cached_data('meter_info.csv', _query_meter_info)
+    with st.spinner('Getting meter information...'):
+        def _query_meter_info():
+            connection = get_db_connection()
+            df_meter_info = pd.read_sql(METER_DETAILS, connection)
+            connection.close()
+            return df_meter_info
+        
+        return get_cached_data('meter_info.csv', _query_meter_info)
 
 def get_meter_daily_consumption(nmi_id, start_date):
-    def _query_meter_daily_consumption():
-        connection = get_db_connection()
-        if nmi_id == 1:
-            df_nmi = pd.read_sql(METER_DAILY_CONSUMPTION_SQL_NEW_MAIN % (str(nmi_id), str(start_date)), connection)
-        else:
-            df_nmi = pd.read_sql(METER_DAILY_CONSUMPTION_SQL % (str(nmi_id), str(start_date)), connection)
-        connection.close()
-        df_nmi['DateKey'] = pd.to_datetime(df_nmi['date']).dt.strftime('%Y%m%d').astype(int)
-        df_nmi.drop(columns=["date"], inplace=True)
-        df_nmi = df_nmi[df_nmi['DateKey'] >= 20180101].reset_index(drop=True)
-        df_nmi = df_nmi[['DateKey','metered_consumption', 'peak_demand']]
-        df_nmi_cleaned = remove_outliers_combined(df_nmi, consumption_col='metered_consumption')
-        return df_nmi_cleaned
-    
-    cache_filename = f'meter_daily_consumption_{nmi_id}_{start_date}.csv'
-    return get_cached_data(cache_filename, _query_meter_daily_consumption)
+    with st.spinner(f'Getting daily consumption data for NMI {nmi_id}...'):
+        def _query_meter_daily_consumption():
+            connection = get_db_connection()
+            if nmi_id == 1:
+                df_nmi = pd.read_sql(METER_DAILY_CONSUMPTION_SQL_NEW_MAIN % (str(nmi_id), str(start_date)), connection)
+            else:
+                df_nmi = pd.read_sql(METER_DAILY_CONSUMPTION_SQL % (str(nmi_id), str(start_date)), connection)
+            connection.close()
+            df_nmi['DateKey'] = pd.to_datetime(df_nmi['date']).dt.strftime('%Y%m%d').astype(int)
+            df_nmi.drop(columns=["date"], inplace=True)
+            df_nmi = df_nmi[df_nmi['DateKey'] >= 20180101].reset_index(drop=True)
+            df_nmi = df_nmi[['DateKey','metered_consumption', 'peak_demand']]
+            df_nmi_cleaned = remove_outliers_combined(df_nmi, consumption_col='metered_consumption')
+            return df_nmi_cleaned
+        
+        cache_filename = f'meter_daily_consumption_{nmi_id}_{start_date}.csv'
+        return get_cached_data(cache_filename, _query_meter_daily_consumption)
 
 def get_meter_solar_generation(nmi_id):
-    def _query_meter_solar_generation():
-        connection = get_db_connection()
-        df_solar = pd.read_sql(METER_SOLAR_GENERATION % (str(nmi_id)), connection)
-        connection.close()
-        return df_solar
-    
-    cache_filename = f'meter_solar_generation_{nmi_id}.csv'
-    return get_cached_data(cache_filename, _query_meter_solar_generation)
+    with st.spinner(f'Getting solar generation data for NMI {nmi_id}...'):
+        def _query_meter_solar_generation():
+            connection = get_db_connection()
+            df_solar = pd.read_sql(METER_SOLAR_GENERATION % (str(nmi_id)), connection)
+            connection.close()
+            return df_solar
+        
+        cache_filename = f'meter_solar_generation_{nmi_id}.csv'
+        return get_cached_data(cache_filename, _query_meter_solar_generation)
 
 def get_time_data(start_date='20180101', end_date='20250101'):
-    def _query_date_data():
-        connection = get_db_connection()
-        date = pd.read_sql("SELECT * FROM dbo.DimDate WHERE DateKey >= %s AND DateKey <= %s" % (start_date, end_date),
-                          connection)
-        connection.close()
-        return date
-    
-    def _query_time_data():
-        connection = get_db_connection()
-        time = pd.read_sql("SELECT * FROM dbo.DimTime", connection)
-        connection.close()
-        return time
-    
-    cache_filename_1 = f'date_data_{start_date}_{end_date}.csv'
-    cache_filename_2 = f'time_data_{start_date}_{end_date}.csv'
-    date = get_cached_data(cache_filename_1, _query_date_data)
-    time = get_cached_data(cache_filename_2, _query_time_data)
-    return date, time
+    with st.spinner('Getting time data...'):
+        def _query_date_data():
+            connection = get_db_connection()
+            date = pd.read_sql("SELECT * FROM dbo.DimDate WHERE DateKey >= %s AND DateKey <= %s" % (start_date, end_date),
+                            connection)
+            connection.close()
+            return date
+        
+        def _query_time_data():
+            connection = get_db_connection()
+            time = pd.read_sql("SELECT * FROM dbo.DimTime", connection)
+            connection.close()
+            return time
+        
+        cache_filename_1 = f'date_data_{start_date}_{end_date}.csv'
+        cache_filename_2 = f'time_data_{start_date}_{end_date}.csv'
+        date = get_cached_data(cache_filename_1, _query_date_data)
+        time = get_cached_data(cache_filename_2, _query_time_data)
+        return date, time
 
 def get_temperature_data(nmi_id, start_date='20180101', end_date='20250101'):
-    def _query_temperature_data():
-        connection = get_db_connection()
+    with st.spinner(f'Getting temperature data for NMI {nmi_id}...'):
+        def _query_temperature_data():
+            connection = get_db_connection()
+            df_meter_info = get_meter_info()    
+            campus_key = df_meter_info[df_meter_info['NetworkID'] == nmi_id]['CampusKey'].values[0]
+            
+            reading_temperature = pd.read_sql("""SELECT[DateKey]
+                        ,[TimeKey]
+                        ,[ApparentTemperature]
+                        ,[AirTemperature]
+                        ,[DewPointTemperature]
+                        ,[RelativeHumidity]
+                    FROM [Leap].[dbo].[vwClimate] WHERE CampusKey= %s AND DateKey >= %s AND DateKey <= %s"""
+                                                % (campus_key, start_date, end_date), connection)
+            connection.close()
+            return reading_temperature
+        
         df_meter_info = get_meter_info()    
         campus_key = df_meter_info[df_meter_info['NetworkID'] == nmi_id]['CampusKey'].values[0]
+        cache_filename = f'temperature_data_{campus_key}_{start_date}_{end_date}.csv'
+        reading_temperature = get_cached_data(cache_filename, _query_temperature_data)
         
-        reading_temperature = pd.read_sql("""SELECT[DateKey]
-                    ,[TimeKey]
-                    ,[ApparentTemperature]
-                    ,[AirTemperature]
-                    ,[DewPointTemperature]
-                    ,[RelativeHumidity]
-                FROM [Leap].[dbo].[vwClimate] WHERE CampusKey= %s AND DateKey >= %s AND DateKey <= %s"""
-                                            % (campus_key, start_date, end_date), connection)
-        connection.close()
-        return reading_temperature
-    
-    df_meter_info = get_meter_info()    
-    campus_key = df_meter_info[df_meter_info['NetworkID'] == nmi_id]['CampusKey'].values[0]
-    cache_filename = f'temperature_data_{campus_key}_{start_date}_{end_date}.csv'
-    reading_temperature = get_cached_data(cache_filename, _query_temperature_data)
-    
-    date, time = get_time_data(start_date, end_date)
-    reading_temperature['Timestamp'] = pd.to_datetime(
-        reading_temperature.DateKey.astype(str) + " " + reading_temperature['TimeKey'].astype(str).str.zfill(6),
-        format="ISO8601")
+        with st.spinner('Processing temperature data...'):
+            date, time = get_time_data(start_date, end_date)
+            reading_temperature['Timestamp'] = pd.to_datetime(
+                reading_temperature.DateKey.astype(str) + " " + reading_temperature['TimeKey'].astype(str).str.zfill(6),
+                format="ISO8601")
 
-    temp_range = pd.date_range(reading_temperature['Timestamp'].dt.date.min(axis=0),
-                              reading_temperature['Timestamp'].max(axis=0),
-                              freq='15min',
-                              name="Timestamp").to_frame().reset_index(drop=True)
-    temp_out = pd.merge(temp_range, reading_temperature, how="left", left_on="Timestamp", right_on="Timestamp").fillna(
-        method='ffill')
-    temp_out.TimeKey = temp_out.Timestamp.dt.strftime("%H%M%S").astype(int)
-    temp_out.DateKey = temp_out.Timestamp.dt.strftime("%Y%m%d").astype(int)
-    reading_temperature = temp_out.drop(columns=["Timestamp"])
+            temp_range = pd.date_range(reading_temperature['Timestamp'].dt.date.min(axis=0),
+                                    reading_temperature['Timestamp'].max(axis=0),
+                                    freq='15min',
+                                    name="Timestamp").to_frame().reset_index(drop=True)
+            temp_out = pd.merge(temp_range, reading_temperature, how="left", left_on="Timestamp", right_on="Timestamp").fillna(
+                method='ffill')
+            temp_out.TimeKey = temp_out.Timestamp.dt.strftime("%H%M%S").astype(int)
+            temp_out.DateKey = temp_out.Timestamp.dt.strftime("%Y%m%d").astype(int)
+            reading_temperature = temp_out.drop(columns=["Timestamp"])
 
-    date_data = date.drop_duplicates(subset='DateKey', keep='first')
-    date_data = date_data.drop(columns=['Date', 'DaySuffix', 'WeekDayName', 'HolidayText', 'DayOfYear',
-                                      'ISOWeekOfYear', 'MonthName', 'QuarterName', 'MMYYYY', 'MonthYear',
-                                      'FirstDayOfMonth', 'LastDayOfMonth', 'FirstDayOfQuarter', 'LastDayOfQuarter',
-                                      'FirstDayOfYear', 'LastDayOfYear', 'FirstDayOfNextMonth', 'FirstDayOfNextYear',
-                                      'IsSemester', 'IsExamPeriod', 'CalendarSignificance',
-                                      'HasCalendarSignificance'])
-    date_data["IsWeekend"] = date_data["IsWeekend"].astype(int)
-    date_data["IsHoliday"] = date_data["IsHoliday"].astype(int)
+            date_data = date.drop_duplicates(subset='DateKey', keep='first')
+            date_data = date_data.drop(columns=['Date', 'DaySuffix', 'WeekDayName', 'HolidayText', 'DayOfYear',
+                                            'ISOWeekOfYear', 'MonthName', 'QuarterName', 'MMYYYY', 'MonthYear',
+                                            'FirstDayOfMonth', 'LastDayOfMonth', 'FirstDayOfQuarter', 'LastDayOfQuarter',
+                                            'FirstDayOfYear', 'LastDayOfYear', 'FirstDayOfNextMonth', 'FirstDayOfNextYear',
+                                            'IsSemester', 'IsExamPeriod', 'CalendarSignificance',
+                                            'HasCalendarSignificance'])
+            date_data["IsWeekend"] = date_data["IsWeekend"].astype(int)
+            date_data["IsHoliday"] = date_data["IsHoliday"].astype(int)
 
-    time_data = time.drop_duplicates(subset='TimeKey', keep='first')
-    time_data = time_data.drop(
-        columns=['Hour24ShortString', 'Hour24FullString', 'Hour24MinString', 'Hour12', 'Hour12ShortString',
-                'Hour12MinString', 'Hour12FullString', 'AmPmString', 'MinuteCode', 'MinuteShortString', 
-                'MinuteFullString24', 'MinuteFullString12', 'HalfHourShortString', 'HalfHourCode',
-                'HalfHourFullString12', 'SecondShortString', 'Second', 'FullTimeString12', 'FullTime'])
+            time_data = time.drop_duplicates(subset='TimeKey', keep='first')
+            time_data = time_data.drop(
+                columns=['Hour24ShortString', 'Hour24FullString', 'Hour24MinString', 'Hour12', 'Hour12ShortString',
+                        'Hour12MinString', 'Hour12FullString', 'AmPmString', 'MinuteCode', 'MinuteShortString', 
+                        'MinuteFullString24', 'MinuteFullString12', 'HalfHourShortString', 'HalfHourCode',
+                        'HalfHourFullString12', 'SecondShortString', 'Second', 'FullTimeString12', 'FullTime'])
 
-    reading_temperature.reset_index(drop=True, inplace=True)
-    reading_temperature["DateKey"] = pd.to_datetime(reading_temperature["DateKey"], format="%Y%m%d")
+            reading_temperature.reset_index(drop=True, inplace=True)
+            reading_temperature["DateKey"] = pd.to_datetime(reading_temperature["DateKey"], format="%Y%m%d")
 
-    df_temperature_daily = reading_temperature.groupby(reading_temperature['DateKey'].dt.date).agg({
-        'ApparentTemperature': 'mean',
-        'AirTemperature': 'mean',
-        'DewPointTemperature': 'mean',
-        'RelativeHumidity': 'mean'
-    }).reset_index()
+            df_temperature_daily = reading_temperature.groupby(reading_temperature['DateKey'].dt.date).agg({
+                'ApparentTemperature': 'mean',
+                'AirTemperature': 'mean',
+                'DewPointTemperature': 'mean',
+                'RelativeHumidity': 'mean'
+            }).reset_index()
 
-    df_temperature_daily['DateKey'] = pd.to_datetime(df_temperature_daily['DateKey']).dt.strftime('%Y%m%d').astype(int)
+            df_temperature_daily['DateKey'] = pd.to_datetime(df_temperature_daily['DateKey']).dt.strftime('%Y%m%d').astype(int)
 
-    return date_data, df_temperature_daily
+            return date_data, df_temperature_daily
 
 def get_temperature_daily_data(nmi_id, start_date, end_date):
     date_data, df_temperature_daily = get_temperature_data(nmi_id, start_date, end_date)
@@ -344,49 +353,52 @@ def train_model_autoML(df_nmi_train_X, df_nmi_train_y):
     return tuned_xgb
 
 def train_model(df_nmi_train_X, df_nmi_train_y, nmi_id, autoML=False):
-    import json
+    with st.spinner('Training model...'):
+        import json
 
-    # Define cache file path for this NMI's hyperparameters
-    cache_file = f'./cachedir/xgb_params_{nmi_id}.json'
-    
-    # Check if cached parameters exist
-    if os.path.exists(cache_file):
-        # Load cached parameters and use them
-        with open(cache_file, 'r') as f:
-            best_params = json.load(f)
+        # Define cache file path for this NMI's hyperparameters
+        cache_file = f'./cachedir/xgb_params_{nmi_id}.json'
         
-        print("Model loaded from cache")
-        model = XGBRegressor(**best_params)
-        model.fit(df_nmi_train_X, df_nmi_train_y)
-    else:
-        # First iteration - use autoML to find best parameters
-        if autoML:
-            model = train_model_autoML(df_nmi_train_X, df_nmi_train_y)
+        # Check if cached parameters exist
+        if os.path.exists(cache_file):
+            # Load cached parameters and use them
+            with open(cache_file, 'r') as f:
+                best_params = json.load(f)
             
-            # Extract hyperparameters from the tuned model
-            best_params = model.get_params()
-            
-            # Save parameters to cache file
-            os.makedirs('./cachedir', exist_ok=True)
-            with open(cache_file, 'w') as f:
-                json.dump(best_params, f, indent=2)
-            print("Model saved to cache")
-        else:
-            model = get_model()
+            st.info("Model loaded from cache")
+            model = XGBRegressor(**best_params)
             model.fit(df_nmi_train_X, df_nmi_train_y)
+        else:
+            # First iteration - use autoML to find best parameters
+            if autoML:
+                with st.spinner('Using AutoML to find best parameters...'):
+                    model = train_model_autoML(df_nmi_train_X, df_nmi_train_y)
+                    
+                    # Extract hyperparameters from the tuned model
+                    best_params = model.get_params()
+                    
+                    # Save parameters to cache file
+                    os.makedirs('./cachedir', exist_ok=True)
+                    with open(cache_file, 'w') as f:
+                        json.dump(best_params, f, indent=2)
+                    st.success("Model saved to cache")
+            else:
+                model = get_model()
+                model.fit(df_nmi_train_X, df_nmi_train_y)
 
-    y_pred_train = model.predict(df_nmi_train_X)
-    mse_train = mean_squared_error(df_nmi_train_y, y_pred_train)
-    rmse_train = np.sqrt(mse_train)
-    mape_train = mean_absolute_percentage_error(df_nmi_train_y, y_pred_train)
-    return model, rmse_train, mape_train
+        y_pred_train = model.predict(df_nmi_train_X)
+        mse_train = mean_squared_error(df_nmi_train_y, y_pred_train)
+        rmse_train = np.sqrt(mse_train)
+        mape_train = mean_absolute_percentage_error(df_nmi_train_y, y_pred_train)
+        return model, rmse_train, mape_train
 
 def predict_model(model, df_nmi_test_X, df_nmi_test_y):
-    df_nmi_test_y_pred = model.predict(df_nmi_test_X)
-    mse_test = mean_squared_error(df_nmi_test_y, df_nmi_test_y_pred)
-    rmse_test = np.sqrt(mse_test)
-    mape_test = mean_absolute_percentage_error(df_nmi_test_y, df_nmi_test_y_pred)
-    return df_nmi_test_y_pred, rmse_test, mape_test
+    with st.spinner('Making predictions...'):
+        df_nmi_test_y_pred = model.predict(df_nmi_test_X)
+        mse_test = mean_squared_error(df_nmi_test_y, df_nmi_test_y_pred)
+        rmse_test = np.sqrt(mse_test)
+        mape_test = mean_absolute_percentage_error(df_nmi_test_y, df_nmi_test_y_pred)
+        return df_nmi_test_y_pred, rmse_test, mape_test
 
 def evaluate_model(df_nmi_test_y, df_nmi_test_y_pred):
     rmse = np.sqrt(mean_squared_error(df_nmi_test_y, df_nmi_test_y_pred))
@@ -469,20 +481,22 @@ def get_future_dates():
 
 
 def predict_weather(nmi_id, start_date, end_date):
-    df_future_dates, _ = get_future_dates()
-    temperature_models = get_temperature_models(nmi_id, start_date, end_date)
-    df_future_temperature = df_future_dates.copy()
-    df_future_dates.drop(columns=['DatePlot'], inplace=True)
-    for temp_type, model in temperature_models.items():
-        y_pred = model.predict(df_future_dates)
-        df_future_temperature[temp_type] = y_pred
-    
-    df_future_temperature = df_future_temperature[['ApparentTemperature', 'AirTemperature',
-                                                    'DewPointTemperature', 'RelativeHumidity', 
-                                                    'Day', 'Weekday', 'IsWeekend', 'IsHoliday', 
-                                                    'DOWInMonth', 'WeekOfMonth', 'WeekOfYear', 
-                                                    'Month', 'Quarter', 'Year', 'DatePlot']]
-    return df_future_temperature
+    with st.spinner('Predicting weather data...'):
+        df_future_dates, _ = get_future_dates()
+        temperature_models = get_temperature_models(nmi_id, start_date, end_date)
+        df_future_temperature = df_future_dates.copy()
+        df_future_dates.drop(columns=['DatePlot'], inplace=True)
+        for temp_type, model in temperature_models.items():
+            with st.spinner(f'Predicting {temp_type}...'):
+                y_pred = model.predict(df_future_dates)
+                df_future_temperature[temp_type] = y_pred
+        
+        df_future_temperature = df_future_temperature[['ApparentTemperature', 'AirTemperature',
+                                                        'DewPointTemperature', 'RelativeHumidity', 
+                                                        'Day', 'Weekday', 'IsWeekend', 'IsHoliday', 
+                                                        'DOWInMonth', 'WeekOfMonth', 'WeekOfYear', 
+                                                        'Month', 'Quarter', 'Year', 'DatePlot']]
+        return df_future_temperature
 
 # def get_future_X(nmi_id, start_date, end_date):
 #     df_future_temperature = predict_weather(nmi_id, start_date, end_date)
@@ -490,62 +504,64 @@ def predict_weather(nmi_id, start_date, end_date):
 #     return df_future_temperature, future_dates
     
 def forecast_nmi_consumption(model, nmi_id, start_date, end_date, df_future, codes=[]):
-    df_future_temperature = predict_weather(nmi_id, start_date, end_date)
-    df_future_dates, future_dates = get_future_dates()
+    with st.spinner('Forecasting NMI consumption...'):
+        df_future_temperature = predict_weather(nmi_id, start_date, end_date)
+        df_future_dates, future_dates = get_future_dates()
 
-    # df_LLM = df_future_temperature.copy()
-    # globals()['df_LLM'] = df_LLM
-    # if len(codes) > 0:
-    #     for code in codes:
-    #         exec(code, globals())
-    
-    df_future_backup = df_future.copy()
-    df_future_backup.drop(columns=['DatePlot', 'DateKey'], inplace=True)
+        # df_LLM = df_future_temperature.copy()
+        # globals()['df_LLM'] = df_LLM
+        # if len(codes) > 0:
+        #     for code in codes:
+        #         exec(code, globals())
+        
+        df_future_backup = df_future.copy()
+        df_future_backup.drop(columns=['DatePlot', 'DateKey'], inplace=True)
 
-    y_pred = model.predict(df_future_backup)
-    return df_future, y_pred
+        y_pred = model.predict(df_future_backup)
+        return df_future, y_pred
 
 
 def solar_farm_data(nmi_id, start_date, end_date):
-    df_solar_andrew = pd.read_excel("gridpowerkWh.xlsx")
-    df_solar_andrew['DateKey'] = pd.to_datetime(df_solar_andrew['timestamp']).dt.strftime('%Y%m%d').astype(int)
-    df_solar_andrew['DateKey'] = pd.to_datetime(df_solar_andrew['DateKey'], format="%Y%m%d")
+    with st.spinner('Processing solar farm data...'):
+        df_solar_andrew = pd.read_excel("gridpowerkWh.xlsx")
+        df_solar_andrew['DateKey'] = pd.to_datetime(df_solar_andrew['timestamp']).dt.strftime('%Y%m%d').astype(int)
+        df_solar_andrew['DateKey'] = pd.to_datetime(df_solar_andrew['DateKey'], format="%Y%m%d")
 
-    df_andrew_nmi_daily = df_solar_andrew.groupby(df_solar_andrew['DateKey'].dt.date).agg({
-        'Grid Power kWh': 'sum'
-    }).reset_index()
+        df_andrew_nmi_daily = df_solar_andrew.groupby(df_solar_andrew['DateKey'].dt.date).agg({
+            'Grid Power kWh': 'sum'
+        }).reset_index()
 
-    df_andrew_nmi_daily['Day'] = pd.to_datetime(df_andrew_nmi_daily['DateKey'], format='%Y%m%d').dt.day
-    df_andrew_nmi_daily['Month'] = pd.to_datetime(df_andrew_nmi_daily['DateKey'], format='%Y%m%d').dt.month
+        df_andrew_nmi_daily['Day'] = pd.to_datetime(df_andrew_nmi_daily['DateKey'], format='%Y%m%d').dt.day
+        df_andrew_nmi_daily['Month'] = pd.to_datetime(df_andrew_nmi_daily['DateKey'], format='%Y%m%d').dt.month
 
-    df_future_temperature = predict_weather(nmi_id, start_date, end_date)
-    df_merged_future = df_andrew_nmi_daily.merge(
-        df_future_temperature,
-        on=['Day', 'Month'],
-        how='left'
-    ).drop(columns=['DateKey']).sort_values(by=['Year', 'Month', 'Day']).reset_index(drop=True)
+        df_future_temperature = predict_weather(nmi_id, start_date, end_date)
+        df_merged_future = df_andrew_nmi_daily.merge(
+            df_future_temperature,
+            on=['Day', 'Month'],
+            how='left'
+        ).drop(columns=['DateKey']).sort_values(by=['Year', 'Month', 'Day']).reset_index(drop=True)
 
-    df_solar = get_meter_solar_generation(nmi_id)
-    df_solar_agg = preprocess_solar_data(df_solar)
+        df_solar = get_meter_solar_generation(nmi_id)
+        df_solar_agg = preprocess_solar_data(df_solar)
 
-    df_solar_agg['DateKey'] = pd.to_datetime(df_solar_agg['DateKey'], format="%Y%m%d")
-    df_solar_agg['Day'] = df_solar_agg['DateKey'].dt.day
-    df_solar_agg['Month'] = df_solar_agg['DateKey'].dt.month
+        df_solar_agg['DateKey'] = pd.to_datetime(df_solar_agg['DateKey'], format="%Y%m%d")
+        df_solar_agg['Day'] = df_solar_agg['DateKey'].dt.day
+        df_solar_agg['Month'] = df_solar_agg['DateKey'].dt.month
 
-    # Drop DateKey and aggregate SolarPowerReading by Month and Day
-    df_solar_agg_yearly = df_solar_agg.drop('DateKey', axis=1)\
-        .groupby(['Month', 'Day'])['SolarPowerReading']\
-        .mean()\
-        .reset_index()
+        # Drop DateKey and aggregate SolarPowerReading by Month and Day
+        df_solar_agg_yearly = df_solar_agg.drop('DateKey', axis=1)\
+            .groupby(['Month', 'Day'])['SolarPowerReading']\
+            .mean()\
+            .reset_index()
 
-    # Merge df_merged_future with df_solar_agg_yearly, keeping all records from df_merged_future
-    df_merged_future = df_merged_future.merge(
-        df_solar_agg_yearly,
-        on=['Month', 'Day'],
-        how='left'
-    ).reset_index(drop=True)
+        # Merge df_merged_future with df_solar_agg_yearly, keeping all records from df_merged_future
+        df_merged_future = df_merged_future.merge(
+            df_solar_agg_yearly,
+            on=['Month', 'Day'],
+            how='left'
+        ).reset_index(drop=True)
 
-    return df_merged_future
+        return df_merged_future
 
 def remove_outliers_combined(df, consumption_col='consumption', z_score_threshold=3):
     """
@@ -646,46 +662,45 @@ def get_response(msg, temperature=0, top_p = 0, model = "gpt-4o-2024-08-06"):
     return response.choices[0].message.content
 
 def integrate_domain_knowledge(nmi_id, start_date, end_date, df_nmi_train_X, df_nmi_test_X, domain_facts=[]):
+    with st.spinner('Integrating domain knowledge...'):
+        df_future_temperature = predict_weather(nmi_id, start_date, end_date)
 
-    df_future_temperature = predict_weather(nmi_id, start_date, end_date)
+        df_nmi_train_X['set'] = 'train'
+        df_nmi_test_X['set'] = 'test'
+        df_future_temperature['set'] = 'future'
 
-    df_nmi_train_X['set'] = 'train'
-    df_nmi_test_X['set'] = 'test'
-    df_future_temperature['set'] = 'future'
+        df_LLM = pd.concat([df_nmi_train_X, df_nmi_test_X, df_future_temperature])
+        globals()['df_LLM'] = df_LLM
 
-    df_LLM = pd.concat([df_nmi_train_X, df_nmi_test_X, df_future_temperature])
-    globals()['df_LLM'] = df_LLM
+        codes = []
 
-    codes = []
+        if len(domain_facts) > 0:
+            # Load the prompt template from file
+            with open('metadata/code_generation.prompt', 'r') as f:
+                prompt_template = f.read()
+            
+            for fact in domain_facts:
+                try:
+                    with st.spinner(f'Processing domain fact: {fact[:50]}...'):
+                        prompt = prompt_template.format(fact=fact)
 
-    if len(domain_facts) > 0:
-        # Load the prompt template from file
-        with open('metadata/code_generation.prompt', 'r') as f:
-            prompt_template = f.read()
-        
-        for fact in domain_facts:
-            try:
-                prompt = prompt_template.format(fact=fact)
+                        raw_resp = get_response(prompt)
+                        code = get_response("Show me the Python syntax of the following. Remove starting ```python and ending ```:\n\n" + raw_resp)
+                        st.info(f"Fact: {fact}")
+                        st.code(code)
+                        exec(code, globals())
+                        codes.append(code)
+                        st.success(f"Successfully processed fact: {fact[:50]}...")
+                except Exception as e:
+                    st.error(f"Error processing fact: {fact}")
+                    st.error(f"Error message: {str(e)}")
+                    continue
 
-                raw_resp = get_response(prompt)
-                code = get_response("Show me the Python syntax of the following. Remove starting ```python and ending ```:\n\n" + raw_resp)
-                print(f"Fact: {fact}")
-                print(f"Code: {code}")
-                exec(code, globals())
-                codes.append(code)
-                print(f"df_LLM.columns: {df_LLM.columns}")
-                print("===============================================")
-            except Exception as e:
-                print(f"Error processing fact: {fact}")
-                print(f"Error message: {str(e)}")
-                continue
-    
+        df_nmi_train_X = df_LLM[df_LLM['set'] == 'train'].drop(columns='set')
+        df_nmi_test_X = df_LLM[df_LLM['set'] == 'test'].drop(columns='set')
+        df_future_temperature = df_LLM[df_LLM['set'] == 'future'].drop(columns='set')
 
-    df_nmi_train_X = df_LLM[df_LLM['set'] == 'train'].drop(columns='set')
-    df_nmi_test_X = df_LLM[df_LLM['set'] == 'test'].drop(columns='set')
-    df_future_temperature = df_LLM[df_LLM['set'] == 'future'].drop(columns='set')
-
-    return df_nmi_train_X, df_nmi_test_X, df_future_temperature, df_LLM, codes
+        return df_nmi_train_X, df_nmi_test_X, df_future_temperature, df_LLM, codes
 
 def preprocess_solar_data(df_solar):
     df_solar['date_time'] = pd.to_datetime(df_solar['ReadingDateTime'])
