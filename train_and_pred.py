@@ -470,45 +470,47 @@ def get_temperature_models(nmi_id, start_date, end_date):
         return temperature_models
 
 def get_future_dates():
+
+    with st.spinner('Getting future dates...'):
     # Create date range
-    start_date = pd.to_datetime('20250101', format='%Y%m%d')
-    end_date   = pd.to_datetime('20261231', format='%Y%m%d')
-    date_range = pd.date_range(start=start_date, end=end_date, freq='D')
+        start_date = pd.to_datetime('20250101', format='%Y%m%d')
+        end_date   = pd.to_datetime('20261231', format='%Y%m%d')
+        date_range = pd.date_range(start=start_date, end=end_date, freq='D')
 
-    # Create DataFrame with date as index initially
-    future_dates = pd.DataFrame(index=date_range)
+        # Create DataFrame with date as index initially
+        future_dates = pd.DataFrame(index=date_range)
 
-    # Add all date components
-    future_dates['DateKey'] = future_dates.index.strftime('%Y%m%d').astype(int)
-    future_dates['DatePlot'] = pd.to_datetime(future_dates["DateKey"], format="%Y%m%d")
-    future_dates['Day'] = future_dates.index.day
-    future_dates['Weekday'] = future_dates.index.weekday + 1
-    future_dates['IsWeekend'] = (future_dates.index.weekday >= 5).astype(int)
-    future_dates['Month'] = future_dates.index.month
-    future_dates['Quarter'] = future_dates.index.quarter
-    future_dates['Year'] = future_dates.index.year
+        # Add all date components
+        future_dates['DateKey'] = future_dates.index.strftime('%Y%m%d').astype(int)
+        future_dates['DatePlot'] = pd.to_datetime(future_dates["DateKey"], format="%Y%m%d")
+        future_dates['Day'] = future_dates.index.day
+        future_dates['Weekday'] = future_dates.index.weekday + 1
+        future_dates['IsWeekend'] = (future_dates.index.weekday >= 5).astype(int)
+        future_dates['Month'] = future_dates.index.month
+        future_dates['Quarter'] = future_dates.index.quarter
+        future_dates['Year'] = future_dates.index.year
 
-    # Calculate WeekOfYear properly
-    future_dates['WeekOfYear'] = future_dates.index.isocalendar().week
+        # Calculate WeekOfYear properly
+        future_dates['WeekOfYear'] = future_dates.index.isocalendar().week
 
-    # Calculate DOWInMonth
-    future_dates['DOWInMonth'] = future_dates.groupby(['Year', 'Month', 'Weekday']).cumcount() + 1
+        # Calculate DOWInMonth
+        future_dates['DOWInMonth'] = future_dates.groupby(['Year', 'Month', 'Weekday']).cumcount() + 1
 
-    # Calculate WeekOfMonth
-    future_dates['WeekOfMonth'] = future_dates.groupby(['Year', 'Month']).cumcount() // 7 + 1
+        # Calculate WeekOfMonth
+        future_dates['WeekOfMonth'] = future_dates.groupby(['Year', 'Month']).cumcount() // 7 + 1
 
-    # Initialize IsHoliday as 0
-    future_dates['IsHoliday'] = 0
+        # Initialize IsHoliday as 0
+        future_dates['IsHoliday'] = 0
 
-    # Reorder columns to match your format
-    future_dates = future_dates[['DateKey', 'Day', 'Weekday', 'IsWeekend', 'IsHoliday', 
-                            'DOWInMonth', 'WeekOfMonth', 'WeekOfYear', 'Month', 
-                            'Quarter', 'Year', 'DatePlot']]
+        # Reorder columns to match your format
+        future_dates = future_dates[['DateKey', 'Day', 'Weekday', 'IsWeekend', 'IsHoliday', 
+                                'DOWInMonth', 'WeekOfMonth', 'WeekOfYear', 'Month', 
+                                'Quarter', 'Year', 'DatePlot']]
 
-    future_dates.reset_index(inplace=True, drop='index')
-    df_future_dates = future_dates.drop(columns=['DateKey'])
+        future_dates.reset_index(inplace=True, drop='index')
+        df_future_dates = future_dates.drop(columns=['DateKey'])
 
-    return df_future_dates, future_dates
+        return df_future_dates, future_dates
 
 
 def predict_weather(nmi_id, start_date, end_date):
