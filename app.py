@@ -39,6 +39,8 @@ if 'previous_forecast_dates' not in st.session_state:
     st.session_state.previous_forecast_dates = None
 if 'previous_forecast_values' not in st.session_state:
     st.session_state.previous_forecast_values = None
+if 'model_error_history' not in st.session_state:
+    st.session_state.model_error_history = []
 
 def load_data(nmi_id, start_date, end_date, facts=[], test_dates=[]):
     # Create a progress bar
@@ -327,7 +329,7 @@ def main():
             fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
             fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
             
-                        # Display model error metric above the plot
+            # Display model error metric above the plot
             if st.session_state.previous_mape is not None:
                 mape_delta = mape_test - st.session_state.previous_mape
                 st.metric(
@@ -342,8 +344,96 @@ def main():
             # Store current MAPE for next comparison
             st.session_state.previous_mape = mape_test
             
+            # Store model error in history
+            current_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            
+            # Store only the custom facts that were used for this forecast
+            facts_used = []
+            if USE_FACTS:
+                facts_used = st.session_state.custom_facts.copy()
+            
+            history_entry = {
+                'timestamp': current_timestamp,
+                'nmi_id': nmi_id,
+                'nmi_name': meter_dict[nmi_id],
+                'mape': mape_test,
+                'start_date': start_date_str,
+                'end_date': end_date_str,
+                'use_facts': USE_FACTS,
+                'facts_used': facts_used,
+                'num_facts': len(facts_used)
+            }
+            st.session_state.model_error_history.append(history_entry)
+            
             # Display the plot
             st.plotly_chart(fig, use_container_width=True)
+            
+            # Display Model Error History Table
+            if st.session_state.model_error_history:
+                st.subheader("Model Error History")
+                
+                # Create DataFrame for display
+                history_df = pd.DataFrame(st.session_state.model_error_history)
+                
+                # Format the MAPE column for better display
+                history_df['mape_formatted'] = history_df['mape'].apply(lambda x: f"{x:.2%}")
+                
+                # Format facts for display (join with line breaks for readability)
+                history_df['facts_display'] = history_df['facts_used'].apply(
+                    lambda facts: '\n'.join(facts) if isinstance(facts, list) and facts else 'No facts used'
+                )
+                
+                # Reorder columns for better display
+                display_columns = ['timestamp', 'nmi_id', 'nmi_name', 'mape_formatted', 'start_date', 'end_date', 'use_facts', 'num_facts', 'facts_display']
+                display_df = history_df[display_columns].copy()
+                
+                # Rename columns for better display
+                display_df.columns = ['Timestamp', 'NMI ID', 'NMI Name', 'Model Error', 'Start Date', 'End Date', 'Used Facts', 'Num Facts', 'Facts Used']
+                
+                # Format dates for better display
+                display_df['Start Date'] = display_df['Start Date'].apply(lambda x: f"{x[:4]}-{x[4:6]}-{x[6:]}")
+                display_df['End Date'] = display_df['End Date'].apply(lambda x: f"{x[:4]}-{x[4:6]}-{x[6:]}")
+                
+                # Sort by timestamp (most recent first)
+                display_df = display_df.sort_values('Timestamp', ascending=False)
+                
+                # Add filtering options
+                col1, col2 = st.columns([1, 3])
+                with col1:
+                    # Filter by NMI
+                    unique_nmis = ['All'] + list(display_df['NMI Name'].unique())
+                    selected_nmi = st.selectbox("Filter by NMI:", unique_nmis)
+                    
+                    # Filter by facts usage
+                    facts_filter = st.selectbox("Filter by Facts Usage:", ['All', 'Yes', 'No'])
+                
+                # Apply filters
+                filtered_df = display_df.copy()
+                if selected_nmi != 'All':
+                    filtered_df = filtered_df[filtered_df['NMI Name'] == selected_nmi]
+                if facts_filter != 'All':
+                    facts_bool = facts_filter == 'Yes'
+                    filtered_df = filtered_df[filtered_df['Used Facts'] == facts_bool]
+                
+                # Display the filtered table
+                st.dataframe(
+                    filtered_df, 
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                # Display summary statistics
+                if len(filtered_df) > 0:
+                    st.caption(f"Showing {len(filtered_df)} of {len(display_df)} total forecasts")
+                    
+                    # Calculate average error for filtered results
+                    avg_error = history_df.loc[filtered_df.index, 'mape'].mean()
+                    st.caption(f"Average Model Error: {avg_error:.2%}")
+                
+                # Add a button to clear history
+                if st.button("Clear History"):
+                    st.session_state.model_error_history = []
+                    st.rerun()
             
             # Display additional information in columns
             col1, col2 = st.columns(2)
