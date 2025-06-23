@@ -18,6 +18,7 @@ from plotly.subplots import make_subplots
 import json
 from openai import OpenAI
 import requests
+from azure.data.tables import TableServiceClient
 
 # Set page config
 st.set_page_config(
@@ -56,7 +57,11 @@ def load_data(nmi_id, start_date, end_date, facts=[], test_dates=[]):
     # For local testing, use: "http://localhost:7071/api/nmitrain"
     # For production, use: "https://your-function-app.azurewebsites.net/api/nmitrain"
     #AZURE_FUNCTION_URL = "https://dynamicnmibaselines.azurewebsites.net/api/nmitrain"
-    function_url = st.secrets['default']['AZURE_FUNCTION_URL']
+    # function_url = st.secrets['default']['AZURE_FUNCTION_URL']
+    function_url = "http://localhost:7072/api/nmitrain"
+
+    service = TableServiceClient.from_connection_string(conn_str=st.secrets['default']['CONNECTION_STRING'])
+    table_client = service.get_table_client(table_name=st.secrets['default']['TABLE_NAME'])
     
     with st.spinner('Sending request to Azure function...'):
         try:
@@ -73,8 +78,26 @@ def load_data(nmi_id, start_date, end_date, facts=[], test_dates=[]):
             # Extract data from response
             mape_test = result['model_performance']['test_mape']
             
-            # Create DataFrames for plotting
-            # Historical data
+            # Create DataFrames for plotting - separate training and test data
+            # Training data
+            training_dates = pd.to_datetime(result['training_data']['dates'])
+            training_values = result['training_data']['actual_values']
+            
+            df_training = pd.DataFrame({
+                'DatePlot': training_dates,
+                'metered_consumption': training_values
+            })
+            
+            # Test data
+            test_dates = pd.to_datetime(result['testing_data']['dates'])
+            test_values = result['testing_data']['actual_values']
+            
+            df_test = pd.DataFrame({
+                'DatePlot': test_dates,
+                'metered_consumption': test_values
+            })
+            
+            # Combined historical data (for compatibility)
             historical_dates = pd.to_datetime(result['training_data']['dates'] + result['testing_data']['dates'])
             historical_values = result['training_data']['actual_values'] + result['testing_data']['actual_values']
             
@@ -98,7 +121,7 @@ def load_data(nmi_id, start_date, end_date, facts=[], test_dates=[]):
             df_LLM = pd.DataFrame()    # Not needed for plotting
             df_future = pd.DataFrame() # Not needed for plotting
             
-            return None, mape_test, df_nmi_X, df_nmi_Y, df_future_dates, y_pred, df_LLM, df_future
+            return None, mape_test, df_nmi_X, df_nmi_Y, df_future_dates, y_pred, df_LLM, df_future, df_training, df_test
             
         except requests.exceptions.RequestException as e:
             st.error(f"Failed to connect to Azure function: {str(e)}")
@@ -106,6 +129,34 @@ def load_data(nmi_id, start_date, end_date, facts=[], test_dates=[]):
         except Exception as e:
             st.error(f"Error processing response from Azure function: {str(e)}")
             raise e
+
+def publish_to_azure_table(nmi_id, start_date_str, end_date_str, facts, test_dates, use_facts):
+    """Publish forecast request data to Azure table"""
+    try:
+        service = TableServiceClient.from_connection_string(conn_str=st.secrets['default']['CONNECTION_STRING'])
+        table_client = service.get_table_client(table_name=st.secrets['default']['TABLE_NAME'])
+        
+        # Create entity for Azure table
+        entity = {
+            'PartitionKey': str(nmi_id),
+            'RowKey': f"{start_date_str}_{end_date_str}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            'nmi_id': str(nmi_id),
+            'start_date': start_date_str,
+            'end_date': end_date_str,
+            'facts': json.dumps(facts) if facts else "",
+            'test_dates': json.dumps(test_dates) if test_dates else "",
+            'timestamp': datetime.now().isoformat(),
+            'num_facts': len(facts),
+            'use_facts': use_facts
+        }
+        
+        # Insert entity into table
+        table_client.create_entity(entity=entity)
+        # st.success("Forecast request logged to Azure table successfully!")
+        
+    except Exception as e:
+        st.error(f"Failed to log to Azure table: {str(e)}")
+        # Don't raise the exception to avoid breaking the main functionality
 
 # Load configuration data
 @st.cache_data
@@ -193,12 +244,15 @@ def main():
     # Load and process data
     if st.sidebar.button("Generate Forecast"):
         with st.spinner("Generating forecast..."):
+            # Publish to Azure table first
+            publish_to_azure_table(nmi_id, start_date_str, end_date_str, st.session_state.custom_facts, test_split, USE_FACTS)
+            
             if USE_FACTS:
-                model, mape_test, df_nmi_X, df_nmi_Y, df_future_dates, y_pred, df_LLM, df_future = load_data(
+                model, mape_test, df_nmi_X, df_nmi_Y, df_future_dates, y_pred, df_LLM, df_future, df_training, df_test = load_data(
                     nmi_id, start_date_str, end_date_str, facts=st.session_state.custom_facts, test_dates=test_split
                 )
             else:
-                model, mape_test, df_nmi_X, df_nmi_Y, df_future_dates, y_pred, df_LLM, df_future = load_data(
+                model, mape_test, df_nmi_X, df_nmi_Y, df_future_dates, y_pred, df_LLM, df_future, df_training, df_test = load_data(
                     nmi_id, start_date_str, end_date_str, test_dates=test_split
                 )
             
@@ -206,6 +260,22 @@ def main():
             fig = go.Figure()
             
             # Add traces
+            # Training data
+            fig.add_trace(go.Scatter(
+                x=df_training['DatePlot'],
+                y=df_training['metered_consumption'],
+                name='Training Data',
+                line=dict(color='blue')
+            ))
+            
+            # Test data
+            fig.add_trace(go.Scatter(
+                x=df_test['DatePlot'],
+                y=df_test['metered_consumption'],
+                name='Test Data',
+                line=dict(color='orange')
+            ))
+            
             # Commented out gross consumption for now
             # fig.add_trace(go.Scatter(
             #     x=df_nmi_Y['DatePlot'],
@@ -213,13 +283,6 @@ def main():
             #     name='NMI Consumption (Gross)',
             #     line=dict(color='red')
             # ))
-            
-            fig.add_trace(go.Scatter(
-                x=df_nmi_Y['DatePlot'],
-                y=df_nmi_Y['metered_consumption'],
-                name='Historical Consumption',
-                line=dict(color='blue')
-            ))
             
             # Commented out gross prediction for now
             # fig.add_trace(go.Scatter(
