@@ -12,11 +12,12 @@ from dynaconf import settings
 import pyodbc
 import logging
 # from joblib import Memory
-from train_and_pred import *
+# from train_and_pred import *
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import json
 from openai import OpenAI
+import requests
 
 # Set page config
 st.set_page_config(
@@ -42,52 +43,89 @@ def load_data(nmi_id, start_date, end_date, facts=[], test_dates=[]):
     # Create a progress bar
     progress_bar = st.progress(0)
     
-    # Load and process data with progress updates
-    with st.spinner('Loading historical consumption data...'):
-        df_nmi_X, df_nmi_Y = get_train_test_data(nmi_id, start_date, end_date)
-        progress_bar.progress(20)
+    # Prepare request data for Azure function
+    request_data = {
+        "nmi_id": str(nmi_id),
+        "start_date": start_date,
+        "end_date": end_date,
+        "test_dates": test_dates,
+        "domain_facts": facts
+    }
     
-    with st.spinner('Splitting data into training and testing sets...'):
-        df_nmi_test_X, df_nmi_train_X, df_nmi_test_y, df_nmi_train_y = train_test_split(df_nmi_X, df_nmi_Y, test_dates)
-        progress_bar.progress(40)
+    # Azure function URL - you can configure this in Streamlit secrets
+    # For local testing, use: "http://localhost:7071/api/nmitrain"
+    # For production, use: "https://your-function-app.azurewebsites.net/api/nmitrain"
+    #AZURE_FUNCTION_URL = "https://dynamicnmibaselines.azurewebsites.net/api/nmitrain"
+    function_url = st.secrets['default']['AZURE_FUNCTION_URL']
     
-    with st.spinner('Integrating domain knowledge and processing features...'):
-        client = OpenAI(api_key=st.secrets['default']["OPENAI_API_KEY"])
-        df_nmi_train_X, df_nmi_test_X, df_future, df_LLM, codes = integrate_domain_knowledge(client, nmi_id, start_date, end_date, df_nmi_train_X, df_nmi_test_X, facts)
-        progress_bar.progress(60)
-    
-    with st.spinner('Preparing final training and testing datasets...'):
-        df_nmi_train_X, df_nmi_test_X, df_nmi_train_y, df_nmi_test_y = prep_train_test_data(df_nmi_train_X, df_nmi_test_X, df_nmi_train_y, df_nmi_test_y)
-        progress_bar.progress(70)
-    
-    with st.spinner('Training the forecasting model...'):
-        model, rmse_train, mape_train = train_model(df_nmi_train_X, df_nmi_train_y, nmi_id)
-        progress_bar.progress(80)
-    
-    with st.spinner('Evaluating model performance...'):
-        df_nmi_test_y_pred, rmse_test, mape_test = predict_model(model, df_nmi_test_X, df_nmi_test_y)   
-        progress_bar.progress(90)
-    
-    with st.spinner('Generating future consumption forecasts...'):
-        df_future_dates, y_pred = forecast_nmi_consumption(model, nmi_id, start_date, end_date, df_future, codes)
-        progress_bar.progress(100)
-    
-    return model, mape_test, df_nmi_X, df_nmi_Y, df_future_dates, y_pred, df_LLM, df_future
+    with st.spinner('Sending request to Azure function...'):
+        try:
+            # Make the request to Azure function
+            response = requests.post(function_url, json=request_data)
+            response.raise_for_status()
+            
+            # Parse the response
+            result = response.json()
+            progress_bar.progress(100)
 
-# def get_all_meter_details():
-#     df_meter_info = get_meter_info()
-#     meter_dict = {row['NetworkID'] : row['Name'] for _, row in df_meter_info.iterrows()}
-#     campus_dict = {row['NetworkID'] : row['CampusKey'] for _, row in df_meter_info.iterrows()}
-#     return meter_dict, campus_dict
+            # print(result)
+            
+            # Extract data from response
+            mape_test = result['model_performance']['test_mape']
+            
+            # Create DataFrames for plotting
+            # Historical data
+            historical_dates = pd.to_datetime(result['training_data']['dates'] + result['testing_data']['dates'])
+            historical_values = result['training_data']['actual_values'] + result['testing_data']['actual_values']
+            
+            df_nmi_Y = pd.DataFrame({
+                'DatePlot': historical_dates,
+                'metered_consumption': historical_values
+            })
+            
+            # Future forecast data
+            future_dates = pd.to_datetime(result['forecast_data']['dates'])
+            future_values = result['forecast_data']['predicted_values']
+            
+            df_future_dates = pd.DataFrame({
+                'DatePlot': future_dates
+            })
+            
+            y_pred = future_values
+            
+            # For compatibility, create empty DataFrames for unused variables
+            df_nmi_X = pd.DataFrame()  # Not needed for plotting
+            df_LLM = pd.DataFrame()    # Not needed for plotting
+            df_future = pd.DataFrame() # Not needed for plotting
+            
+            return None, mape_test, df_nmi_X, df_nmi_Y, df_future_dates, y_pred, df_LLM, df_future
+            
+        except requests.exceptions.RequestException as e:
+            st.error(f"Failed to connect to Azure function: {str(e)}")
+            raise e
+        except Exception as e:
+            st.error(f"Error processing response from Azure function: {str(e)}")
+            raise e
 
 # Load configuration data
 @st.cache_data
 def load_config_data():
-    meter_dict, campus_dict = get_all_meter_details()
+    # Load meter info from JSON file instead of database
     with open('metadata/facts.json', 'r') as f:
         facts_data = json.load(f)
     with open('metadata/train_test_split.json', 'r') as f:
         test_split_data = json.load(f)
+    with open('metadata/meter_info.json', 'r') as f:
+        meter_info_data = json.load(f)
+    
+    # Create meter_dict and campus_dict from meter_info_data
+    meter_dict = {}
+    campus_dict = {}
+    
+    for nmi_id, meter_info in meter_info_data.items():
+        meter_dict[nmi_id] = meter_info['name']
+        campus_dict[nmi_id] = meter_info['campus_key']
+    
     return meter_dict, campus_dict, facts_data, test_split_data
 
 # Main app
@@ -156,11 +194,11 @@ def main():
     if st.sidebar.button("Generate Forecast"):
         with st.spinner("Generating forecast..."):
             if USE_FACTS:
-                model, mape_test, df_nmi_X, df_nmi_Y, df_future_dates, y_pred, df_LLM, df_LLM_future = load_data(
+                model, mape_test, df_nmi_X, df_nmi_Y, df_future_dates, y_pred, df_LLM, df_future = load_data(
                     nmi_id, start_date_str, end_date_str, facts=st.session_state.custom_facts, test_dates=test_split
                 )
             else:
-                model, mape_test, df_nmi_X, df_nmi_Y, df_future_dates, y_pred, _, _ = load_data(
+                model, mape_test, df_nmi_X, df_nmi_Y, df_future_dates, y_pred, df_LLM, df_future = load_data(
                     nmi_id, start_date_str, end_date_str, test_dates=test_split
                 )
             

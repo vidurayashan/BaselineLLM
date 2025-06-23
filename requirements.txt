@@ -4,3 +4,4 @@ xgboost
 openai
 scikit-learn
 plotly
+requests

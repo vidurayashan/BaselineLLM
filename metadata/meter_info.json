@@ -1,0 +1,92 @@
+{
+  "1": {
+    "name": "Bundoora - Main Network",
+    "description": "LTU01_01",
+    "campus_key": "1",
+    "location": "Melbourne (Bundoora) Campus"
+  },
+  "2": {
+    "name": "Bundoora - College Drive Network",
+    "description": "LTU01_028 College Drive (2nd Feeder)",
+    "campus_key": "1",
+    "location": "Melbourne (Bundoora) Campus"
+  },
+  "106": {
+    "name": "Mildura - 471 Benetook Ave",
+    "description": "6203666845",
+    "campus_key": "4",
+    "location": "Mildura Campus"
+  },
+  "107": {
+    "name": "Shepparton - Fryers Street",
+    "description": "LTU01_20",
+    "campus_key": "5",
+    "location": "Shepparton Campus"
+  },
+  "126": {
+    "name": "Bendigo LSU - Applied Science 2",
+    "description": "Applied Science 2 Building-VCCCCB0009",
+    "campus_key": "3",
+    "location": "Bendigo Campus"
+  },
+  "132": {
+    "name": "Bendigo LSU - Library Union",
+    "description": "Library Union Building-VCCCCB0010",
+    "campus_key": "3",
+    "location": "Bendigo Campus"
+  },
+  "139": {
+    "name": "MCFC",
+    "description": "LTU01_02",
+    "campus_key": "1",
+    "location": "Melbourne (Bundoora) Campus"
+  },
+  "140": {
+    "name": "Bendigo - Hillside Apartments",
+    "description": "LTU01_022",
+    "campus_key": "3",
+    "location": "Bendigo Campus"
+  },
+  "141": {
+    "name": "Wodonga - McFarlanes Hill Residences",
+    "description": "LTU01_026",
+    "campus_key": "2",
+    "location": "Albury-Wodonga Campus"
+  },
+  "145": {
+    "name": "La Trobe - University Lodge",
+    "description": "LTU01_03",
+    "campus_key": "1",
+    "location": "Melbourne (Bundoora) Campus"
+  },
+  "146": {
+    "name": "Institute for Advanced Study (NR1-NR8)",
+    "description": "LTU01_04",
+    "campus_key": "1",
+    "location": "Melbourne (Bundoora) Campus"
+  },
+  "147": {
+    "name": "Mont Park (TER7-TER14)",
+    "description": "LTU01_07",
+    "campus_key": "1",
+    "location": "Melbourne (Bundoora) Campus"
+  },
+  "148": {
+    "name": "R&D TEC Building 2 (2PD)",
+    "description": "LTU01_08",
+    "campus_key": "1",
+    "location": "Melbourne (Bundoora) Campus"
+  },
+  "154": {
+    "name": "La Trobe - Parkers Road PO4200015252 Wodonga",
+    "description": "LTU01_16",
+    "campus_key": "2",
+    "location": "Albury-Wodonga Campus"
+  },
+  "166": {
+    "name": "CARM Centre",
+    "description": "VDDD000967",
+    "campus_key": "1",
+    "location": "Melbourne (Bundoora) Campus"
+  }
+} 
