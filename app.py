@@ -55,12 +55,8 @@ def load_data(nmi_id, start_date, end_date, facts=[], test_dates=[]):
         "domain_facts": facts
     }
     
-    # Azure function URL - you can configure this in Streamlit secrets
-    # For local testing, use: "http://localhost:7071/api/nmitrain"
-    # For production, use: "https://your-function-app.azurewebsites.net/api/nmitrain"
-    #AZURE_FUNCTION_URL = "https://dynamicnmibaselines.azurewebsites.net/api/nmitrain"
-    # function_url = st.secrets['default']['AZURE_FUNCTION_URL']
-    function_url = "http://localhost:7072/api/nmitrain"
+    function_url = st.secrets['default']['AZURE_FUNCTION_URL']
+    # function_url = "http://localhost:7072/api/nmitrain"
 
     service = TableServiceClient.from_connection_string(conn_str=st.secrets['default']['CONNECTION_STRING'])
     table_client = service.get_table_client(table_name=st.secrets['default']['TABLE_NAME'])
@@ -397,37 +393,19 @@ def main():
                 # Sort by timestamp (most recent first)
                 display_df = display_df.sort_values('Timestamp', ascending=False)
                 
-                # Add filtering options
-                col1, col2 = st.columns([1, 3])
-                with col1:
-                    # Filter by NMI
-                    unique_nmis = ['All'] + list(display_df['NMI Name'].unique())
-                    selected_nmi = st.selectbox("Filter by NMI:", unique_nmis)
-                    
-                    # Filter by facts usage
-                    facts_filter = st.selectbox("Filter by Facts Usage:", ['All', 'Yes', 'No'])
-                
-                # Apply filters
-                filtered_df = display_df.copy()
-                if selected_nmi != 'All':
-                    filtered_df = filtered_df[filtered_df['NMI Name'] == selected_nmi]
-                if facts_filter != 'All':
-                    facts_bool = facts_filter == 'Yes'
-                    filtered_df = filtered_df[filtered_df['Used Facts'] == facts_bool]
-                
-                # Display the filtered table
+                # Display the table
                 st.dataframe(
-                    filtered_df, 
+                    display_df, 
                     use_container_width=True,
                     hide_index=True
                 )
                 
                 # Display summary statistics
-                if len(filtered_df) > 0:
-                    st.caption(f"Showing {len(filtered_df)} of {len(display_df)} total forecasts")
+                if len(display_df) > 0:
+                    st.caption(f"Total forecasts: {len(display_df)}")
                     
-                    # Calculate average error for filtered results
-                    avg_error = history_df.loc[filtered_df.index, 'mape'].mean()
+                    # Calculate average error
+                    avg_error = history_df['mape'].mean()
                     st.caption(f"Average Model Error: {avg_error:.2%}")
                 
                 # Add a button to clear history
