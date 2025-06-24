@@ -89,10 +89,17 @@ def load_data(nmi_id, start_date, end_date, facts=[], test_dates=[]):
             # Test data
             test_dates = pd.to_datetime(result['testing_data']['dates'])
             test_values = result['testing_data']['actual_values']
+            # Test predictions
+            test_predictions = result['testing_data']['predicted_values']
             
             df_test = pd.DataFrame({
                 'DatePlot': test_dates,
                 'metered_consumption': test_values
+            })
+
+            df_test_predictions = pd.DataFrame({
+                'DatePlot': test_dates,
+                'predicted_consumption': test_predictions
             })
             
             # Combined historical data (for compatibility)
@@ -119,7 +126,7 @@ def load_data(nmi_id, start_date, end_date, facts=[], test_dates=[]):
             df_LLM = pd.DataFrame()    # Not needed for plotting
             df_future = pd.DataFrame() # Not needed for plotting
             
-            return None, mape_test, df_nmi_X, df_nmi_Y, df_future_dates, y_pred, df_LLM, df_future, df_training, df_test
+            return None, mape_test, df_nmi_X, df_nmi_Y, df_future_dates, y_pred, df_LLM, df_future, df_training, df_test, df_test_predictions
             
         except requests.exceptions.RequestException as e:
             st.error(f"Failed to connect to Azure function: {str(e)}")
@@ -246,11 +253,11 @@ def main():
             publish_to_azure_table(nmi_id, start_date_str, end_date_str, st.session_state.custom_facts, test_split, USE_FACTS)
             
             if USE_FACTS:
-                model, mape_test, df_nmi_X, df_nmi_Y, df_future_dates, y_pred, df_LLM, df_future, df_training, df_test = load_data(
+                model, mape_test, df_nmi_X, df_nmi_Y, df_future_dates, y_pred, df_LLM, df_future, df_training, df_test, df_test_predictions = load_data(
                     nmi_id, start_date_str, end_date_str, facts=st.session_state.custom_facts, test_dates=test_split
                 )
             else:
-                model, mape_test, df_nmi_X, df_nmi_Y, df_future_dates, y_pred, df_LLM, df_future, df_training, df_test = load_data(
+                model, mape_test, df_nmi_X, df_nmi_Y, df_future_dates, y_pred, df_LLM, df_future, df_training, df_test, df_test_predictions = load_data(
                     nmi_id, start_date_str, end_date_str, test_dates=test_split
                 )
             
@@ -272,6 +279,14 @@ def main():
                 y=df_test['metered_consumption'],
                 name='Test Data',
                 line=dict(color='orange')
+            ))
+            
+            # Test predictions
+            fig.add_trace(go.Scatter(
+                x=df_test_predictions['DatePlot'],
+                y=df_test_predictions['predicted_consumption'],
+                name='Test Predictions',
+                line=dict(color='gray')
             ))
             
             # Commented out gross consumption for now
