@@ -42,7 +42,7 @@ if 'previous_forecast_values' not in st.session_state:
 if 'model_error_history' not in st.session_state:
     st.session_state.model_error_history = []
 
-def load_data(nmi_id, start_date, end_date, facts=[], test_dates=[]):
+def load_data(nmi_id, start_date, end_date, facts=[], test_dates=[], hyper_tune=False):
     # Create a progress bar
     progress_bar = st.progress(0)
     
@@ -52,11 +52,12 @@ def load_data(nmi_id, start_date, end_date, facts=[], test_dates=[]):
         "start_date": start_date,
         "end_date": end_date,
         "test_dates": test_dates,
-        "domain_facts": facts
+        "domain_facts": facts,
+        "hyper_tune": hyper_tune
     }
     
     function_url = st.secrets['default']['AZURE_FUNCTION_URL']
-    # function_url = "http://localhost:7072/api/nmitrain"
+    # function_url = "http://localhost:7073/api/nmitrain"
 
     service = TableServiceClient.from_connection_string(conn_str=st.secrets['default']['CONNECTION_STRING'])
     table_client = service.get_table_client(table_name=st.secrets['default']['TABLE_NAME'])
@@ -194,6 +195,7 @@ def main():
     # Sidebar controls
     st.sidebar.header("Controls")
     USE_FACTS = st.sidebar.checkbox("Use Domain Facts", value=True)
+    HYPER_TUNE = st.sidebar.checkbox("Hyper Tune", value=False)
     
     # Select NMI
     nmi_id = st.sidebar.selectbox(
@@ -254,11 +256,11 @@ def main():
             
             if USE_FACTS:
                 model, mape_test, df_nmi_X, df_nmi_Y, df_future_dates, y_pred, df_LLM, df_future, df_training, df_test, df_test_predictions = load_data(
-                    nmi_id, start_date_str, end_date_str, facts=st.session_state.custom_facts, test_dates=test_split
+                    nmi_id, start_date_str, end_date_str, facts=st.session_state.custom_facts, test_dates=test_split, hyper_tune=HYPER_TUNE
                 )
             else:
                 model, mape_test, df_nmi_X, df_nmi_Y, df_future_dates, y_pred, df_LLM, df_future, df_training, df_test, df_test_predictions = load_data(
-                    nmi_id, start_date_str, end_date_str, test_dates=test_split
+                    nmi_id, start_date_str, end_date_str, test_dates=test_split, hyper_tune=HYPER_TUNE
                 )
             
             # Create Plotly figure
